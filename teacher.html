@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>OISII 교사용 대시보드</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.57.4/dist/umd/supabase.min.js"></script>
+</head>
+<body class="bg-slate-100 text-gray-800 p-3 sm:p-6">
+<div class="max-w-5xl mx-auto">
+<h1 class="text-xl font-black mb-1">🍱 일본에 한식 팝업 열기 프로젝트 · 교사용</h1>
+<p id="who" class="text-xs text-gray-500 mb-3"></p>
+
+<div id="login" class="bg-white rounded-2xl p-5 max-w-sm space-y-2 shadow">
+  <p class="font-bold text-sm">교사 로그인 (Supabase에 만든 교사 이메일)</p>
+  <input id="em" type="email" placeholder="이메일" class="w-full border rounded-xl px-3 py-2">
+  <input id="pw" type="password" placeholder="비밀번호" class="w-full border rounded-xl px-3 py-2">
+  <button onclick="doLogin()" class="w-full bg-indigo-600 text-white font-black rounded-xl py-2">로그인</button>
+  <p id="lmsg" class="text-xs text-red-600"></p>
+</div>
+
+<div id="app" class="hidden">
+  <div class="flex flex-wrap gap-2 mb-3 items-center">
+    <label class="text-xs font-bold">반(cohort)</label>
+    <input id="cohort" value="main" class="border rounded-lg px-2 py-1 text-sm w-24" onchange="refreshAll()">
+    <button data-t="prog" class="tab">진행 현황</button><button data-t="speak" class="tab">3단계 발화 기록</button>
+    <button data-t="roster" class="tab">명단 관리</button><button data-t="export" class="tab">내보내기</button>
+    <button onclick="refreshAll()" class="ml-auto text-xs underline">🔄 새로고침</button>
+    <button onclick="doLogout()" class="text-xs underline text-gray-500">로그아웃</button>
+  </div>
+  <div id="v-prog" class="view bg-white rounded-2xl p-3 shadow overflow-x-auto"></div>
+  <div id="v-speak" class="view hidden bg-white rounded-2xl p-3 shadow overflow-x-auto"></div>
+  <div id="v-roster" class="view hidden bg-white rounded-2xl p-4 shadow space-y-2">
+    <p class="text-sm font-bold">명단 붙여넣기 (한 줄에 한 명: <code>조번호,이름,학번(선택),PIN(선택)</code>) — 엑셀에서 복사해 붙여도 됩니다</p>
+    <textarea id="rosterTxt" rows="8" class="w-full border rounded-xl p-2 text-sm font-mono" placeholder="1,김가,20101&#10;1,이나,20102,1234&#10;2,박다"></textarea>
+    <div class="flex gap-2"><button onclick="saveRoster()" class="bg-indigo-600 text-white font-black rounded-xl px-4 py-2 text-sm">명단 저장(같은 조·이름은 덮어씀)</button><span id="rmsg" class="text-xs self-center"></span></div>
+    <div id="rosterList" class="text-xs"></div>
+  </div>
+  <div id="v-export" class="view hidden bg-white rounded-2xl p-4 shadow space-y-2">
+    <p class="text-sm font-bold">연구 자료 내려받기 (CSV, 엑셀에서 열림)</p>
+    <button onclick="exportEvents()" class="bg-emerald-600 text-white font-black rounded-xl px-4 py-2 text-sm">활동 기록(events) CSV</button>
+    <button onclick="exportSpeak()" class="bg-emerald-600 text-white font-black rounded-xl px-4 py-2 text-sm">3단계 발화 기록 CSV</button>
+    <p class="text-xs text-gray-500">학생 이름이 들어 있으니 연구 보고서에는 번호나 가명으로 바꿔 쓰세요.</p>
+  </div>
+</div>
+</div>
+<style>.tab{background:#e0e7ff;border-radius:.75rem;padding:.3rem .7rem;font-weight:800;font-size:.8rem}.tab.on{background:#4f46e5;color:#fff}th,td{padding:.25rem .5rem;border-bottom:1px solid #eee;text-align:left;font-size:.78rem;white-space:nowrap}th{background:#f1f5f9}</style>
+<script>
+const SB_URL='https://nubtxstfjdyxujnhadeh.supabase.co', SB_KEY='sb_publishable_hknqZYIJRpMOW-D491GG8Q_pxWrdq70';
+const sb=supabase.createClient(SB_URL,SB_KEY); const $=id=>document.getElementById(id);
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+let tab='prog', G=[], M=[], R=[];
+const coh=()=>$('cohort').value.trim()||'main';
+async function doLogin(){
+  const {error}=await sb.auth.signInWithPassword({email:$('em').value.trim(),password:$('pw').value});
+  if(error){$('lmsg').textContent='로그인 실패: '+error.message;return;}
+  boot();
+}
+async function doLogout(){await sb.auth.signOut();location.reload();}
+async function boot(){
+  const {data:{session}}=await sb.auth.getSession(); if(!session) return;
+  const {data:ok}=await sb.rpc('is_teacher');
+  if(!ok){$('lmsg').textContent='이 계정은 교사로 등록되어 있지 않아요 (teachers 표에 추가 필요).';await sb.auth.signOut();return;}
+  $('login').classList.add('hidden');$('app').classList.remove('hidden');$('who').textContent=session.user.email;
+  document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{tab=b.dataset.t;show();});
+  refreshAll();
+}
+function show(){document.querySelectorAll('.view').forEach(v=>v.classList.add('hidden'));$('v-'+tab).classList.remove('hidden');document.querySelectorAll('.tab').forEach(b=>b.classList.toggle('on',b.dataset.t===tab));}
+async function refreshAll(){
+  const c=coh();
+  [{data:G},{data:M},{data:R}]=await Promise.all([sb.from('groups').select('code,data,version,updated_at').eq('cohort',c),sb.from('members').select('name,group_code,last_seen').eq('cohort',c),sb.from('roster').select('*').eq('cohort',c).order('group_code').order('name')]).then(a=>a.map(x=>({data:x.data||[]})));
+  show(); renderProg(); renderSpeak(); renderRoster();
+}
+const ago=t=>{if(!t)return'-';const s=(Date.now()-new Date(t))/1000;return s<90?'방금':s<3600?Math.round(s/60)+'분 전':s<86400?Math.round(s/3600)+'시간 전':Math.round(s/86400)+'일 전';};
+const sortG=a=>[...a].sort((x,y)=>String(x.code).localeCompare(String(y.code),undefined,{numeric:true}));
+function stat(g){
+  const d=g.data||{}, sg=d.sign||{}, pl=d.plan||{}, cs=d.cases||{}, pr=d.progress||{};
+  const cards=Object.keys(d.cards||{}).length;
+  const sign=['m1','m2','mk','tip'].filter(k=>sg[k]&&sg[k].done).length;
+  const rl=d.relay||{}; const rounds=(rl.rounds||[]).filter(Boolean).length;
+  const cases=Object.values(cs).filter(c=>c&&c.opDone).length, prin=Object.values(cs).filter(c=>c&&c.prDone).length;
+  const planFill=['city','cityWhy','target','targetWhy','concept','menuKr','price','menuWhy','promoNote','careWhy'].filter(k=>String(pl[k]||'').trim()).length;
+  return {cards,sign,rounds,cases,prin,planFill,food:(d.food||{}).krName||'-'};
+}
+function renderProg(){
+  const rows=sortG(G).map(g=>{const s=stat(g),ms=M.filter(m=>m.group_code===g.code),mm=R.filter(r=>r.group_code===g.code);
+    const last=ms.map(m=>m.last_seen).sort().pop();
+    return `<tr><td><b>${esc(g.code)}조</b></td><td>${ms.length}/${mm.length}명 접속</td><td>${ago(last)}</td><td>${s.cards}/${mm.length||4}</td><td>${s.food}</td><td>${s.sign}/4</td><td>${s.rounds}/2</td><td>${s.cases}/4 · ${s.prin}/4</td><td>${s.planFill}/10</td><td>${ago(g.updated_at)}</td></tr>`;}).join('');
+  $('v-prog').innerHTML=`<table class="w-full"><tr><th>조</th><th>접속</th><th>마지막 접속</th><th>1단계 도감</th><th>우리 메뉴</th><th>2단계 입간판</th><th>3단계 회화</th><th>4단계 의견·원칙</th><th>5단계 홍보지</th><th>마지막 저장</th></tr>${rows||'<tr><td colspan=10>아직 입장한 조가 없어요.</td></tr>'}</table>
+  <p class="text-[11px] text-gray-500 mt-2">※ 표시는 조별 저장 데이터 기준입니다. (투표·방명록 등 반 전체 활동은 다음 단계에서 추가)</p>`;
+}
+function speakRows(){
+  return sortG(G).flatMap(g=>((g.data||{}).relay||{}).log?.map(e=>({group:g.code,round:e.r,idx:e.i,by:e.by,jp:e.jp,tries:e.tries,best:e.best,via:e.via,t:e.t}))||[]);
+}
+function renderSpeak(){
+  const rows=speakRows(); const by={};
+  rows.forEach(r=>{const k=r.group+'|'+r.by;(by[k]??={group:r.group,by:r.by,n:0,auto:0,sum:0,tries:0});const o=by[k];o.n++;o.auto+=r.via==='auto'?1:0;o.sum+=r.best;o.tries+=r.tries;});
+  $('v-speak').innerHTML=`<table class="w-full"><tr><th>조</th><th>학생</th><th>발화한 문장 수</th><th>자동 인식 통과</th><th>평균 최고 점수</th><th>평균 시도</th></tr>${Object.values(by).map(o=>`<tr><td>${esc(o.group)}조</td><td>${esc(o.by)}</td><td>${o.n}</td><td>${o.auto} (${Math.round(o.auto/o.n*100)}%)</td><td>${(o.sum/o.n).toFixed(2)}</td><td>${(o.tries/o.n).toFixed(1)}</td></tr>`).join('')||'<tr><td colspan=6>아직 기록이 없어요.</td></tr>'}</table>`;
+}
+async function renderRoster(){
+  $('rosterList').innerHTML=`<p class="font-bold mt-2">현재 명단 ${R.length}명</p><table class="w-full"><tr><th>조</th><th>이름</th><th>학번</th><th>PIN</th></tr>${R.map(r=>`<tr><td>${esc(r.group_code)}</td><td>${esc(r.name)}</td><td>${esc(r.student_no||'')}</td><td>${r.pin?'있음':''}</td></tr>`).join('')}</table>`;
+}
+async function saveRoster(){
+  const rows=$('rosterTxt').value.split('\n').map(l=>l.trim()).filter(Boolean).map(l=>l.split(/[,\t]/).map(x=>x.trim())).filter(a=>a.length>=2&&a[0]&&a[1])
+    .map(a=>({cohort:coh(),group_code:a[0],name:a[1],student_no:a[2]||null,pin:a[3]||null,active:true}));
+  if(!rows.length){$('rmsg').textContent='저장할 줄이 없어요.';return;}
+  const {error}=await sb.from('roster').upsert(rows,{onConflict:'cohort,group_code,name'});
+  $('rmsg').textContent=error?('실패: '+error.message):`${rows.length}명 저장했어요.`; if(!error){$('rosterTxt').value='';refreshAll();}
+}
+function csv(rows,name){
+  if(!rows.length){alert('내보낼 기록이 없어요.');return;}
+  const h=Object.keys(rows[0]); const q=v=>'"'+String(v??'').replace(/"/g,'""')+'"';
+  const t='﻿'+h.join(',')+'\n'+rows.map(r=>h.map(k=>q(r[k])).join(',')).join('\n');
+  const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([t],{type:'text/csv'}));a.download=name;a.click();
+}
+async function exportEvents(){
+  const all=[];for(let from=0;;from+=1000){const {data,error}=await sb.from('events').select('*').eq('cohort',coh()).order('ts').range(from,from+999);if(error){alert(error.message);return;}all.push(...data);if(data.length<1000)break;}
+  csv(all.map(e=>({time:e.ts,group:e.group_code,student:e.student,step:e.step,type:e.type,payload:JSON.stringify(e.payload)})),'events.csv');
+}
+function exportSpeak(){csv(speakRows().map(r=>({...r,time:r.t?new Date(r.t).toISOString():''})),'speaking_log.csv');}
+boot();
+</script></body></html>
