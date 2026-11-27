@@ -321,7 +321,8 @@
     <div id="roleModal" class="hidden absolute inset-0 bg-black/70 flex items-center justify-center p-4 z-50">
         <div class="bg-white w-full max-w-[420px] rounded-3xl p-6 shadow-2xl border border-orange-100 flex flex-col">
             <h3 id="roleModalTitle" class="text-base sm:text-lg font-black text-orange-950 mb-1">🤝 역할을 선택하세요 (여러 개 가능)</h3>
-            <p class="text-xs sm:text-sm text-gray-600 mb-4">역할은 단계마다 새로 고를 수 있어요. 인원이 적으면 한 사람이 여러 역할을 맡아도 돼요. 역할이 없으면 화면을 보기만 해요.</p>
+            <p class="text-xs sm:text-sm text-gray-600 mb-4">역할은 단계마다 새로 고를 수 있어요. 역할이 없으면 화면을 보기만 해요.</p>
+            <div id="roleLimitInfo" class="hidden -mt-2 mb-3 rounded-xl bg-sky-50 border border-sky-200 px-3 py-2 text-xs text-sky-900 leading-relaxed"></div>
             <div id="roleButtons" class="space-y-3 mb-3"></div>
             <button id="releaseRoleBtn" onclick="releaseRole()" class="hidden text-xs text-gray-500 underline mb-4 self-center">이번 단계 역할 모두 내려놓기</button>
             <div class="flex gap-2">
@@ -671,7 +672,11 @@ function applyRemote(data, ver) {
     if (!Sync.base) Sync.base = syncView(newGroup(g.code));   // 처음 입장: 기본값이 기준 → 서버에 있는 값이 이긴다
     const merged = merge3(Sync.base, lv, data || {});
     Sync.base = clone(data || {}); Sync.ver = ver;
-    if (sj(merged) !== sj(lv)) {
+    const noPres = o => { const c = clone(o || {}); delete c.presence; return c; };
+    if (sj(merged) !== sj(lv) && sj(noPres(merged)) === sj(noPres(lv))) {   // 접속 표시만 바뀜: 화면 전체를 다시 그리지 않는다
+        writeView(g, merged);
+        if (!$('roleModal').classList.contains('hidden')) renderRoleModal();
+    } else if (sj(merged) !== sj(lv)) {
         const before = state.user ? firstOpenStep() : 0;
         writeView(g, merged); rerender();
         const after = state.user ? firstOpenStep() : 0;
@@ -712,7 +717,8 @@ function subscribeGroup() {
         const r = pl.new; if (r && r.cohort === COHORT && r.version > Sync.ver && !Sync.pushing) applyRemote(r.data, r.version);
     }).subscribe(st => { Sync.rt = st; setBadge(Sync.status); if (st !== 'SUBSCRIBED') console.warn('실시간 연결 상태:', st); });   // SUBSCRIBED = 실시간 연결됨
     Sync.poll = setInterval(() => { if (!document.hidden) pull(); }, 8000);       // 실시간이 끊겨도 8초마다 확인
-    Sync.hb = setInterval(() => { if (!document.hidden) logEvent('hb'); }, 90000);  // 접속 중 표시
+    Sync.hb = setInterval(() => { if (!document.hidden) logEvent('hb'); }, 90000);  // 접속 중 표시 (연구 기록용)
+    Sync.pres = setInterval(() => { if (!document.hidden) markPresent(); }, 60000);   // 같은 조에게 '나 접속 중' 알리기 (역할 수 계산용)
 }
 async function startSync() {
     const u = state.user, s = state.sync;
@@ -721,13 +727,14 @@ async function startSync() {
     await pull(true);
     if (Sync.base !== null && sj(syncView(myGroup())) !== sj(Sync.base)) await push();   // 기본값을 서버에 먼저 채워 둠 (이후에는 바뀐 부분만 전송)
     if (!Sync.chan) subscribeGroup();
+    markPresent();
     if (Sync.base === null) setBadge('offline'); else setBadge(Sync.status === 'saving' ? 'saving' : 'ok');
 }
 async function olTeardown() {
     clearTimeout(Sync.timer);
     try { if (Sync.base) { const p = diffTop(Sync.base, syncView(myGroup())); if (Object.keys(p).length) await Sync.sb.rpc('patch_group', { p_patch: p }); } } catch (e) { }
     await flushEvents();
-    Sync.on = false; clearInterval(Sync.poll); clearInterval(Sync.hb);
+    Sync.on = false; clearInterval(Sync.poll); clearInterval(Sync.hb); clearInterval(Sync.pres);
     try { if (Sync.chan) await Sync.sb.removeChannel(Sync.chan); } catch (e) { }
     Sync.chan = null; Sync.base = null; Sync.ver = -1;
     try { await Sync.sb.auth.signOut(); } catch (e) { }
@@ -2346,6 +2353,26 @@ function addComment(n) {
 /* =====================================================================
  * 12. 역할 선택 모달
  * ===================================================================== */
+/* ---- 접속 인원에 따른 역할 수 제한 ----
+ * 같은 조 기기가 1분마다 g.presence[이름] = 시각 을 남긴다. 최근 PRESENT_MIN 분 안에 남긴 조원을 "오늘 온 조원"으로 센다.
+ * 1인당 최대 역할 수 = 4 ÷ 접속 인원 (올림) → 4명: 1개, 3명: 2개, 2명: 2개, 1명: 4개
+ * ?dev 주소나 오프라인(한 기기) 모드에서는 제한하지 않는다. */
+const PRESENT_MIN = 10;
+function markPresent() {
+    if (!ONLINE || !Sync.on || !state.user) return;
+    const g = myGroup(); (g.presence ||= {})[state.user.name] = Date.now(); save();
+}
+function presentNames() {
+    const g = myGroup(), p = g.presence || {}, now = Date.now(), me = state.user.name;
+    const names = (g.members || []).filter(n => n === me || (p[n] && now - p[n] < PRESENT_MIN * 60000));
+    return names.includes(me) ? names : [...names, me];
+}
+function roleLimit() {
+    if (!ONLINE || DEV_MODE) return { on: false, max: ROLE_KEYS.length, n: 0, names: [] };
+    const names = presentNames(), n = names.length;
+    return { on: true, n, names, max: Math.ceil(ROLE_KEYS.length / Math.max(1, n)) };
+}
+document.addEventListener('visibilitychange', () => { if (!document.hidden) markPresent(); });   // 태블릿을 다시 켜면 바로 접속 표시
 function openRoleModal() {
     const st = stageOf(ui.screen); if (!st) return;
     ui.tempRoles = rolesOf(st);
@@ -2353,19 +2380,28 @@ function openRoleModal() {
     $('roleModal').classList.remove('hidden');
 }
 function renderRoleModal() {
-    const st = stageOf(ui.screen), roles = myGroup().roles[st], me = state.user.name;
-    $('roleModalTitle').textContent = `🤝 ${STAGE_NAMES[st]} 역할을 선택하세요 (여러 개 가능)`;
+    const st = stageOf(ui.screen), roles = myGroup().roles[st], me = state.user.name, lim = roleLimit();
+    $('roleModalTitle').textContent = `🤝 ${STAGE_NAMES[st]} 역할을 선택하세요 ${lim.on ? `(최대 ${lim.max}개)` : '(여러 개 가능)'}`;
+    const held = rolesOf(st).length, info = $('roleLimitInfo');
+    info.classList.toggle('hidden', !lim.on);
+    if (lim.on) info.innerHTML = `👥 지금 접속한 조원 <b>${lim.n}명</b> (${lim.names.map(esc).join(', ')}) → 1인당 <b>최대 ${lim.max}개</b>`
+        + (lim.n < 4 ? '<br>아무도 안 맡은 역할은 <b>결석생 몫</b>이에요. 접속한 조원이 나눠 맡아요.' : '')
+        + (held > lim.max ? `<br><span class="text-red-600 font-bold">조원이 늘었어요! 역할을 ${held - lim.max}개 내려놓고 친구에게 넘겨주세요.</span>` : '');
     $('roleButtons').innerHTML = ROLE_KEYS.map(r => {
         const owner = roles[r], taken = owner && owner !== me, picked = ui.tempRoles.includes(r);
         const cls = picked ? 'border-orange-600 bg-orange-50' : 'border-gray-200 bg-gray-50';
-        const label = taken ? `${esc(owner)} 선택` : (picked ? '내 선택 ✓' : '선택 가능');
+        const label = taken ? `${esc(owner)} 선택` : picked ? '내 선택 ✓' : (lim.on && lim.n < 4 ? '결석생 몫 · 선택 가능' : '선택 가능');
         return `<button ${taken ? 'disabled' : ''} onclick="pickRole('${r}')" class="w-full py-3.5 px-4 rounded-2xl border-2 ${cls} flex items-center justify-between text-sm sm:text-base font-bold ${taken ? 'opacity-50 cursor-not-allowed' : ''}">
             <span>${roleText(r)}</span><span class="text-xs text-gray-500">${label}</span></button>`;
     }).join('');
     $('confirmRoleBtn').disabled = ui.tempRoles.length === 0;
     $('releaseRoleBtn').classList.toggle('hidden', rolesOf(st).length === 0);
 }
-function pickRole(r) {   // 누를 때마다 선택/해제
+function pickRole(r) {   // 누를 때마다 선택/해제 (접속 인원에 따라 1인당 최대 개수 제한)
+    const lim = roleLimit();
+    if (!ui.tempRoles.includes(r) && lim.on && ui.tempRoles.length >= lim.max) {
+        toast(`지금 조원 ${lim.n}명이 접속해 있어서 1인당 ${lim.max}개까지 맡을 수 있어요. 다른 역할을 먼저 빼 주세요.`); return;
+    }
     ui.tempRoles = ui.tempRoles.includes(r) ? ui.tempRoles.filter(x => x !== r) : [...ui.tempRoles, r];
     renderRoleModal();
 }
@@ -2373,8 +2409,11 @@ function confirmRole() {
     const st = stageOf(ui.screen); if (!st || ui.tempRoles.length === 0) return;
     const roles = myGroup().roles[st], me = state.user.name;
     if (ui.tempRoles.some(r => roles[r] && roles[r] !== me)) { toast('이미 다른 조원이 선택한 역할이 있어요.'); renderRoleModal(); return; }
+    const lim = roleLimit(), added = ui.tempRoles.filter(r => roles[r] !== me);
+    if (lim.on && added.length && ui.tempRoles.length > lim.max) { toast(`1인당 ${lim.max}개까지 맡을 수 있어요. (지금 접속 ${lim.n}명)`); renderRoleModal(); return; }
     ROLE_KEYS.forEach(r => { if (roles[r] === me) roles[r] = null; });   // 이 단계의 기존 역할 반납 후 다시 배정
     ui.tempRoles.forEach(r => { roles[r] = me; });
+    logEvent('role', { stage: st, roles: [...ui.tempRoles], present: lim.n, max: lim.max });
     save(); closeModal('roleModal'); afterRoleChange();
 }
 function releaseRole() {   // 모두 내려놓으면 이 단계는 보기만 가능 (친구에게 양보할 때)
