@@ -1868,24 +1868,25 @@ function startRound(r) {
     if (r === 2 && !rl.rounds[0]) return;
     const names = shuffle(relayMembers(g)), order = [0, 1, 2, 3].map(i => names[i % names.length]);
     rl.round = r; rl.order = order; rl.card = newCard(r); rl.lines = buildRelayLines(rl.card, r, order);
-    rl.cursor = 0; rl.phase = 'announce'; rl.msg = ''; rl.rounds[r - 1] = false;
+    rl.cursor = 0; rl.phase = 'announce'; rl.msg = ''; rl.hint = false; ui.free = null; rl.rounds[r - 1] = false;
     save(); renderRelay();
 }
 function beginTalk() { const rl = myGroup().relay; if (rl.phase !== 'announce') return; rl.phase = 'choose'; relayAdvance(rl); save(); renderRelay(); }
 function answerRelay(oi) {
     const rl = myGroup().relay; if (rl.phase !== 'choose') return;
     const o = rl.lines[rl.cursor].opts[oi]; if (!o) return;
-    if (o.ok) { rl.phase = 'speak'; rl.msg = ''; rl.fb = { tries: 0, best: 0, passed: false }; ui.recMsg = ''; } else rl.msg = '⚠️ ' + o.why;
+    if (o.ok) { rl.phase = 'speak'; rl.msg = ''; rl.fb = { tries: 0, best: 0, passed: false }; ui.recMsg = ''; ui.free = null; logEvent('speak_try', { mode: 'hint', i: rl.cursor, pick: 'correct' }, 'step3'); }
+    else { rl.msg = '⚠️ ' + o.why; logEvent('speak_try', { mode: 'hint', i: rl.cursor, pick: 'wrong', t: o.t }, 'step3'); }
     save(); renderRelay();
 }
 function confirmSpoken() {
     const rl = myGroup().relay; if (rl.phase !== 'speak') return;
     stopListen();
     const l = rl.lines[rl.cursor], fb = rl.fb || { tries: 0, best: 0 };
-    (rl.log ||= []).push({ r: rl.round, i: rl.cursor, by: l.by, jp: l.jp, tries: fb.tries || 0, best: Math.round((fb.best || 0) * 100) / 100, via: fb.passed ? 'auto' : 'peer', t: Date.now() });
+    (rl.log ||= []).push({ r: rl.round, i: rl.cursor, by: l.by, jp: l.jp, tries: fb.tries || 0, best: Math.round((fb.best || 0) * 100) / 100, via: fb.passed ? 'auto' : 'peer', hint: !fb.free, free: (ui.free && ui.free.tries) || 0, t: Date.now() });
     if (rl.log.length > 600) rl.log.shift();
     logEvent('speak', rl.log[rl.log.length - 1], 'step3');
-    rl.fb = null; rl.cursor++; rl.phase = 'choose'; relayAdvance(rl); save(); renderRelay(); refreshDerived();
+    rl.fb = null; rl.hint = false; rl.msg = ''; ui.free = null; rl.cursor++; rl.phase = 'choose'; relayAdvance(rl); save(); renderRelay(); refreshDerived();
 }
 function resetRelay() { if (!confirm('3단계 회화를 처음부터 다시 할까요?')) return; stopListen(); const g = myGroup(), old = g.relay.log || []; g.relay = newRelay(); g.relay.log = old; save(); renderRelay(); refreshDerived(); }
 function speakJa(t) {
@@ -2003,13 +2004,14 @@ function jaTip(chunk, l) {
 }
 function stopListen() { if (ui.rec) { try { ui.rec.abort(); } catch (e) { } } ui.rec = null; ui.recState = 'idle'; }
 function toggleListen() {
-    const rl = myGroup().relay; if (rl.phase !== 'speak') return;
+    const rl = myGroup().relay; if (rl.phase !== 'speak' && rl.phase !== 'choose') return;
     if (ui.rec) { try { ui.rec.stop(); } catch (e) { } return; }
     if (!JA_SR) { toast('이 기기는 음성 인식을 지원하지 않아요. 조원 확인으로 진행해요.'); return; }
     const l = rl.lines[rl.cursor], r = new JA_SR(); let got = false;
     r.lang = 'ja-JP'; r.interimResults = false; r.maxAlternatives = 5; r.continuous = false;
     ui.recState = 'listening'; ui.recMsg = '';
-    r.onresult = e => { got = true; relayHeard(l, [...e.results[0]].map(a => a.transcript)); };
+    const freeMode = rl.phase === 'choose';
+    r.onresult = e => { got = true; const alts = [...e.results[0]].map(a => a.transcript); if (freeMode) relayFree(l, alts); else relayHeard(l, alts); };
     r.onerror = e => {
         ui.recMsg = ({ 'not-allowed': '마이크 사용을 허용해 주세요. (주소창 옆 자물쇠 → 마이크 허용)', 'service-not-allowed': '이 기기에서는 음성 인식을 쓸 수 없어요. 조원 확인으로 진행해요.', 'no-speech': '소리가 들리지 않았어요. 마이크 가까이에서 다시 말해 보세요.', 'network': '음성 인식은 인터넷에 연결되어 있어야 해요.', 'audio-capture': '마이크를 찾을 수 없어요. 조원 확인으로 진행해요.' })[e.error] || '';
     };
@@ -2024,9 +2026,40 @@ function relayHeard(l, alts) {
     if (r.score >= JA_PASS && !fb.keyMiss) fb.passed = true;
     ui.recMsg = ''; save();
 }
+/* ---- 보기 없이 먼저 말해 보기 (자유 발화) ----
+ * 학생이 보기를 보기 전에 🎤로 대답을 말하면, 들은 말을 정답 문장과 오답 보기 2개에 모두 견주어 본다.
+ *  · 정답과 충분히 같고(75% 이상) 사람 수·개수·금액도 맞음 → "힌트 없이 성공", 바로 다음으로
+ *  · 오답 보기와 더 비슷함 → 그 오답이 왜 틀렸는지 설명 (예: 사람은 ひとり, 물건은 ひとつ)
+ *  · 정답과 절반쯤 같음 → 정답을 보여 주지 않고 "거의 맞았어요" + 다시 말하기
+ *  · 그 밖 → 잘 못 들었어요. 두 번 이상 실패하면 힌트 버튼을 강조 */
+function relayFree(l, alts) {
+    const rl = myGroup().relay, key = rl.round + ':' + rl.cursor;
+    if (!ui.free || ui.free.key !== key) ui.free = { tries: 0, key };
+    const f = ui.free;
+    const scored = l.opts.map(o => ({ o, r: jaScore({ jp: o.t, amts: l.amts }, alts) }));
+    const right = scored.find(x => x.o.ok), wrong = scored.filter(x => !x.o.ok).sort((a, b) => b.r.score - a.r.score)[0];
+    const keyMiss = jaKeyMiss(l, right.r.ok).length;
+    f.tries++; f.heard = right.r.heard || (wrong && wrong.r.heard) || '';
+    let kind;
+    if (right.r.score >= JA_PASS && !keyMiss && !(wrong && wrong.r.score > right.r.score)) kind = 'correct';
+    else if (wrong && wrong.r.score >= JA_NEAR && wrong.r.score > right.r.score) kind = 'wrong';
+    else if (right.r.score >= JA_NEAR) kind = 'near';
+    else kind = 'none';
+    logEvent('speak_try', { mode: rl.hint ? 'hint' : 'free', i: rl.cursor, heard: f.heard, match: kind, score: Math.round(right.r.score * 100) / 100 }, 'step3');
+    if (kind === 'correct') {
+        rl.phase = 'speak'; rl.msg = '';
+        rl.fb = { tries: 1, best: right.r.score, score: right.r.score, heard: right.r.heard, ok: right.r.ok, keyMiss: 0, passed: true, free: !rl.hint };
+        f.msg = ''; save(); return;
+    }
+    f.kind = kind;
+    f.msg = kind === 'wrong' ? '⚠️ ' + wrong.o.why
+        : kind === 'near' ? (keyMiss ? '👍 거의 맞았어요! 사람 수·개수·금액을 상황카드에서 다시 확인하고 말해 봐요.' : '👍 거의 맞았어요! 조금 더 또렷하게, 문장 끝까지 말해 봐요.')
+        : '🤔 잘 알아듣지 못했어요. 천천히 다시 말하거나 💡 힌트를 보세요.';
+}
+function showHint() { const rl = myGroup().relay; if (rl.phase !== 'choose') return; rl.hint = true; save(); logEvent('hint', { i: rl.cursor }, 'step3'); renderRelay(); }
 function relaySpeakHTML(rl, l, who) {
     const fb = rl.fb || { tries: 0 }, listening = ui.recState === 'listening', passed = !!fb.passed, tried = fb.tries > 0;
-    let h = `<div class="bg-emerald-50 border-2 border-emerald-400 rounded-3xl p-4 space-y-3"><p class="text-sm font-black text-emerald-700 text-center">🎉 정답! ${esc(l.by)} 님, 이 말을 소리 내어 말해 보세요 🗣️</p>
+    let h = `<div class="bg-emerald-50 border-2 border-emerald-400 rounded-3xl p-4 space-y-3"><p class="text-sm font-black text-emerald-700 text-center">${fb.free ? `🌟 힌트 없이 말로 대답 성공! ${esc(l.by)} 님 최고예요` : `🎉 정답! ${esc(l.by)} 님, 이 말을 소리 내어 말해 보세요 🗣️`}</p>
         <div class="bg-white rounded-2xl border border-emerald-200 p-3 text-center"><p class="jp-font text-base font-black text-gray-900 leading-snug">${jaTargetHTML(l.jp, tried ? fb.ok : null)} <button type="button" onclick="speakJa(${esc(JSON.stringify(l.jp))})" class="ml-1 text-sm">🔊</button></p><p class="text-[11px] text-gray-500 mt-1">${esc(l.kr)}</p></div>`;
     if (tried) {
         const pct = Math.round(fb.score * 100), bad = jaChunks(l.jp, fb.ok, l).filter(c => c.ratio < 0.7 || c.key).slice(0, 3);
@@ -2085,9 +2118,15 @@ function renderRelay() {
             for (let i = 0; i < revealed; i++) html += relayBubble(rl.lines[i], rl.round, i, false);
             const l = rl.lines[rl.cursor];
             if (rl.phase === 'choose') {
-                const me = state.user.name === l.by;
-                html += `<div class="bg-white border-2 border-orange-400 rounded-3xl p-4 shadow-md space-y-2"><p class="text-xs sm:text-sm font-black text-orange-950">🎯 ${esc(l.by)} 님 차례 ${me ? '(나!)' : '(화면을 넘겨 주세요)'} — ${l.who === 'customer' ? '손님' : '점원'}이 할 알맞은 말을 골라요</p>
-                    ${l.opts.map((o, oi) => `<button type="button" onclick="answerRelay(${oi})" class="jp-font w-full py-3 bg-white border border-orange-200 rounded-xl text-xs sm:text-sm font-bold text-left px-3 hover:bg-orange-50">${'①②③'[oi]} ${esc(o.t)}</button>`).join('')}
+                const me = state.user.name === l.by, f = (ui.free && ui.free.key === rl.round + ':' + rl.cursor) ? ui.free : {}, listening = ui.recState === 'listening', showOpts = rl.hint || !JA_SR;
+                const who = l.who === 'customer' ? '손님' : '점원';
+                html += `<div class="bg-white border-2 border-orange-400 rounded-3xl p-4 shadow-md space-y-2"><p class="text-xs sm:text-sm font-black text-orange-950">🎯 ${esc(l.by)} 님 차례 ${me ? '(나!)' : '(화면을 넘겨 주세요)'} — ${who}이 할 말을 ${JA_SR ? '<u>일본어로 말해</u> 보세요' : '골라요'}</p>
+                    ${JA_SR ? `<button type="button" onclick="toggleListen()" class="w-full py-3.5 rounded-2xl font-black text-sm shadow ${listening ? 'bg-red-600 text-white animate-pulse' : 'bg-emerald-700 text-white'}">${listening ? '🔴 듣는 중… 말하고 나서 눌러도 멈춰요' : f.tries ? '🎤 다시 말하기' : '🎤 눌러서 대답 말하기'}</button>` : ''}
+                    ${f.tries ? `<div class="rounded-2xl border px-3 py-2 text-xs ${f.kind === 'wrong' ? 'bg-red-50 border-red-200 text-red-700' : f.kind === 'near' ? 'bg-amber-50 border-amber-200 text-amber-800' : 'bg-gray-50 border-gray-200 text-gray-700'}"><p class="font-bold">${esc(f.msg || '')}</p><p class="text-[11px] text-gray-500 mt-0.5">앱이 들은 말: <span class="jp-font font-bold text-gray-700">「${esc(f.heard || '(들리지 않음)')}」</span></p></div>` : ''}
+                    ${ui.recMsg ? `<p class="text-xs font-bold text-red-600 text-center">${esc(ui.recMsg)}</p>` : ''}
+                    ${showOpts
+                        ? `<p class="text-[11px] font-bold text-gray-500 pt-1">${JA_SR ? '💡 힌트: 보기 중에서 알맞은 말을 고르고, 그다음 소리 내어 말해요' : '알맞은 말을 골라요'}</p>` + l.opts.map((o, oi) => `<button type="button" onclick="answerRelay(${oi})" class="jp-font w-full py-3 bg-white border border-orange-200 rounded-xl text-xs sm:text-sm font-bold text-left px-3 hover:bg-orange-50">${'①②③'[oi]} ${esc(o.t)}</button>`).join('')
+                        : `<button type="button" onclick="showHint()" class="w-full py-2.5 rounded-2xl text-xs font-black ${(f.tries || 0) >= 2 ? 'bg-amber-400 text-amber-950 shadow' : 'bg-white border border-amber-300 text-amber-800'}">💡 힌트 보기 (보기 3개)</button>`}
                     <p class="text-xs font-bold text-red-600 min-h-[1rem]">${esc(rl.msg)}</p></div>`;
             } else if (rl.phase === 'speak') {
                 const nxt = rl.lines.slice(rl.cursor + 1).find(x => x.student), who = nxt ? nxt.by : (rl.order[(rl.order.indexOf(l.by) + 1) % 4]);

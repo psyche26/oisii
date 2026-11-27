@@ -92,12 +92,12 @@ function renderProg(){
   <p class="text-[11px] text-gray-500 mt-2">※ 표시는 조별 저장 데이터 기준입니다. (투표·방명록 등 반 전체 활동은 다음 단계에서 추가)</p>`;
 }
 function speakRows(){
-  return sortG(G).flatMap(g=>((g.data||{}).relay||{}).log?.map(e=>({group:g.code,round:e.r,idx:e.i,by:e.by,jp:e.jp,tries:e.tries,best:e.best,via:e.via,t:e.t}))||[]);
+  return sortG(G).flatMap(g=>((g.data||{}).relay||{}).log?.map(e=>({group:g.code,round:e.r,idx:e.i,by:e.by,jp:e.jp,tries:e.tries,best:e.best,via:e.via,no_hint:e.hint===false?'Y':(e.hint?'N':''),t:e.t}))||[]);
 }
 function renderSpeak(){
   const rows=speakRows(); const by={};
-  rows.forEach(r=>{const k=r.group+'|'+r.by;(by[k]??={group:r.group,by:r.by,n:0,auto:0,sum:0,tries:0});const o=by[k];o.n++;o.auto+=r.via==='auto'?1:0;o.sum+=r.best;o.tries+=r.tries;});
-  $('v-speak').innerHTML=`<table class="w-full"><tr><th>조</th><th>학생</th><th>발화한 문장 수</th><th>자동 인식 통과</th><th>평균 최고 점수</th><th>평균 시도</th></tr>${Object.values(by).map(o=>`<tr><td>${esc(o.group)}조</td><td>${esc(o.by)}</td><td>${o.n}</td><td>${o.auto} (${Math.round(o.auto/o.n*100)}%)</td><td>${(o.sum/o.n).toFixed(2)}</td><td>${(o.tries/o.n).toFixed(1)}</td></tr>`).join('')||'<tr><td colspan=6>아직 기록이 없어요.</td></tr>'}</table>`;
+  rows.forEach(r=>{const k=r.group+'|'+r.by;(by[k]??={group:r.group,by:r.by,n:0,auto:0,sum:0,tries:0,free:0});const o=by[k];o.n++;o.free+=r.no_hint==='Y'?1:0;o.auto+=r.via==='auto'?1:0;o.sum+=r.best;o.tries+=r.tries;});
+  $('v-speak').innerHTML=`<table class="w-full"><tr><th>조</th><th>학생</th><th>발화한 문장 수</th><th>자동 인식 통과</th><th>힌트 없이 성공</th><th>평균 최고 점수</th><th>평균 시도</th></tr>${Object.values(by).map(o=>`<tr><td>${esc(o.group)}조</td><td>${esc(o.by)}</td><td>${o.n}</td><td>${o.auto} (${Math.round(o.auto/o.n*100)}%)</td><td>${o.free} (${Math.round(o.free/o.n*100)}%)</td><td>${(o.sum/o.n).toFixed(2)}</td><td>${(o.tries/o.n).toFixed(1)}</td></tr>`).join('')||'<tr><td colspan=7>아직 기록이 없어요.</td></tr>'}</table>`;
 }
 async function renderRoster(){
   $('rosterList').innerHTML=`<p class="font-bold mt-2">현재 명단 ${R.length}명</p><table class="w-full"><tr><th>조</th><th>이름</th><th>학번</th><th>PIN</th></tr>${R.map(r=>`<tr><td>${esc(r.group_code)}</td><td>${esc(r.name)}</td><td>${esc(r.student_no||'')}</td><td>${r.pin?'있음':''}</td></tr>`).join('')}</table>`;
