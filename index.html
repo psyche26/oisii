@@ -670,7 +670,12 @@ function applyRemote(data, ver) {
     if (!Sync.base) Sync.base = syncView(newGroup(g.code));   // 처음 입장: 기본값이 기준 → 서버에 있는 값이 이긴다
     const merged = merge3(Sync.base, lv, data || {});
     Sync.base = clone(data || {}); Sync.ver = ver;
-    if (sj(merged) !== sj(lv)) { writeView(g, merged); rerender(); }
+    if (sj(merged) !== sj(lv)) {
+        const before = state.user ? firstOpenStep() : 0;
+        writeView(g, merged); rerender();
+        const after = state.user ? firstOpenStep() : 0;
+        if (after > before) toast(`🎉 조원 모두 ${before}단계를 마쳤어요! ${after}단계가 열렸어요.`);   // 친구 기기에서 마지막으로 끝내도 내 화면에 알림
+    }
     if (sj(merged) !== sj(data || {})) schedulePush();
     else if (Sync.status !== 'saving') setBadge('ok');
 }
@@ -916,10 +921,12 @@ const shuffle = a => { a = [...a]; for (let i = a.length - 1; i > 0; i--) { cons
 const myCard = () => state.dogam.find(c => c.group === state.user.group && c.author === state.user.name) || null;
 const DEV_MODE = location.search.includes('dev');   // ?dev 로 열면 단계 잠금 해제(테스트용)
 
-/* 1단계: 학생마다 [내 메뉴 등록, 투표 1표 이상]. 조원 모두 끝내야 조 전체의 1단계가 완료되어 2단계가 열린다. */
+/* 1단계: 학생마다 [내 메뉴 등록, 투표 3표 모두 사용]. 조원 모두 끝내야 조 전체의 1단계가 완료되어 2단계가 열린다. */
+const VOTE_MAX = 3;                                                  // 한 사람이 쓸 수 있는(써야 하는) 표 수
+const voteNeed = () => Math.max(1, Math.min(VOTE_MAX, state.dogam.length));   // 도감 카드가 3장보다 적으면 있는 만큼만
 function memberStep1(name) {
     const g = state.user.group;
-    return [state.dogam.some(c => c.group === g && c.author === name), ((myGroup().votes || {})[name] || []).length >= 1];
+    return [state.dogam.some(c => c.group === g && c.author === name), ((myGroup().votes || {})[name] || []).length >= voteNeed()];
 }
 const step1Parts = () => memberStep1(state.user.name);
 function step1Group() {
@@ -1126,13 +1133,13 @@ function renderDogam() {
     const myId = state.user.group, me = state.user.name, mine = ui.dogamFilter === 'my';
     const cards = mine ? state.dogam.filter(c => c.group === myId) : state.dogam;
     const used = myVotes(), has = myCard(), [regDone, voteDone] = step1Parts();
-    $('myRemainingVotes').textContent = 3 - used.length;
+    $('myRemainingVotes').textContent = VOTE_MAX - used.length;
     $('dogamSubTitle').textContent = mine ? `우리 조 등록 메뉴 (${cards.length}건)` : `전 학급 등록 메뉴 총람 (${cards.length}건)`;
     $('dogamAddBtn').textContent = has ? '✏️ 내 메뉴 수정' : '➕ 내 메뉴 등록';
     $('dogamAddBtn').classList.toggle('hidden', !mine);
     $('voteBox').classList.toggle('hidden', mine);
     const grp = step1Group(), open = DEV_MODE || grp.all;
-    $('step1Check').innerHTML = `<div>1단계 완료 조건 &nbsp; ${regDone ? '✅' : '⬜'} 내 메뉴 1개 등록하기 &nbsp; ${voteDone ? '✅' : '⬜'} 전체 학급 도감에서 마음에 드는 메뉴에 투표하기 (1인 3표까지)</div>`
+    $('step1Check').innerHTML = `<div>1단계 완료 조건 &nbsp; ${regDone ? '✅' : '⬜'} 내 메뉴 1개 등록하기 &nbsp; ${voteDone ? '✅' : '⬜'} 전체 학급 도감에서 마음에 드는 메뉴 ${voteNeed()}개에 투표하기 (${used.length}/${voteNeed()}표)</div>`
         + `<div class="mt-1 ${grp.all ? 'text-emerald-700' : 'text-gray-600'}">${grp.all
             ? '🎉 우리 조 모두 1단계 완료! 2단계가 열렸어요.'
             : `👥 조원 완료 ${grp.done}/${grp.total}명 · 아직 못 끝낸 조원: ${grp.pending.map(esc).join(', ')}`}</div>`;
@@ -1164,7 +1171,7 @@ function toggleVote(id) {
     const used = myVotes(), i = used.indexOf(id);
     if (i >= 0) { used.splice(i, 1); card.likes--; }
     else {
-        if (used.length >= 3) { toast('투표권(3표)을 모두 사용했습니다!'); return; }
+        if (used.length >= VOTE_MAX) { toast(`투표권(${VOTE_MAX}표)을 모두 사용했습니다!`); return; }
         used.push(id); card.likes++;
     }
     save(); renderDogam();
