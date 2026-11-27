@@ -2353,44 +2353,45 @@ function addComment(n) {
 /* =====================================================================
  * 12. 역할 선택 모달
  * ===================================================================== */
-/* ---- 접속 인원에 따른 역할 수 제한 ----
- * 같은 조 기기가 1분마다 g.presence[이름] = 시각 을 남긴다. 최근 PRESENT_MIN 분 안에 남긴 조원을 "오늘 온 조원"으로 센다.
- * 1인당 최대 역할 수 = 4 ÷ 접속 인원 (올림) → 4명: 1개, 3명: 2개, 2명: 2개, 1명: 4개
- * ?dev 주소나 오프라인(한 기기) 모드에서는 제한하지 않는다. */
-const PRESENT_MIN = 10;
-function markPresent() {
-    if (!ONLINE || !Sync.on || !state.user) return;
-    const g = myGroup(); (g.presence ||= {})[state.user.name] = Date.now(); save();
-}
-function presentNames() {
-    const g = myGroup(), p = g.presence || {}, now = Date.now(), me = state.user.name;
-    const names = (g.members || []).filter(n => n === me || (p[n] && now - p[n] < PRESENT_MIN * 60000));
-    return names.includes(me) ? names : [...names, me];
+/* ---- 접속 인원에 따른 역할 수 제한 (서버가 판단) ----
+ * 접속 여부는 서버의 members.last_seen(서버 시계)으로 센다. 기기는 1분마다 "접속 중" 기록만 보낸다.
+ * 1인당 최대 역할 수 = 4 ÷ 최근 10분 안에 접속한 조원 수 (올림) → 4명: 1개, 3명: 2개, 2명: 2개, 1명: 4개
+ * 역할 확정은 서버 함수 claim_roles 가 한 번에 확인·저장하므로, 두 학생이 동시에 눌러도 겹치지 않는다.
+ * ?dev 주소는 연습 반(cohort=test)에서만 제한을 건너뛴다. 오프라인(한 기기) 모드는 제한 없음. */
+const ROLE_RPC = { ok: true };   // 서버에 claim_roles 가 없으면(설정 SQL 미실행) false 로 바뀌고 예전 방식으로 동작
+function markPresent() { if (ONLINE && Sync.on && state.user) { logEvent('hb'); flushEvents(); } }
+async function fetchPresence() {
+    if (!ONLINE || !Sync.sb) return null;
+    const { data, error } = await Sync.sb.rpc('group_presence');
+    if (error) { ROLE_RPC.ok = false; return null; }
+    ui.pres = { n: data.n, names: data.names || [], t: Date.now() }; return ui.pres;
 }
 function roleLimit() {
-    if (!ONLINE || DEV_MODE) return { on: false, max: ROLE_KEYS.length, n: 0, names: [] };
-    const names = presentNames(), n = names.length;
-    return { on: true, n, names, max: Math.ceil(ROLE_KEYS.length / Math.max(1, n)) };
+    if (!ONLINE || (DEV_MODE && COHORT === 'test') || !ROLE_RPC.ok) return { on: false, max: ROLE_KEYS.length, n: 0, names: [] };
+    const p = ui.pres || { n: 1, names: [state.user.name] }, n = Math.max(1, p.n);
+    return { on: true, n, names: p.names, max: Math.ceil(ROLE_KEYS.length / n), loading: !ui.pres };
 }
-document.addEventListener('visibilitychange', () => { if (!document.hidden) markPresent(); });   // 태블릿을 다시 켜면 바로 접속 표시
-function openRoleModal() {
+document.addEventListener('visibilitychange', () => { if (!document.hidden) markPresent(); });   // 태블릿을 다시 켜면 바로 접속 기록
+async function openRoleModal() {
     const st = stageOf(ui.screen); if (!st) return;
-    ui.tempRoles = rolesOf(st);
+    ui.tempRoles = rolesOf(st); ui.pres = null;
     renderRoleModal();
     $('roleModal').classList.remove('hidden');
+    if (ONLINE) { await pull(true); await fetchPresence(); ui.tempRoles = ui.tempRoles.filter(r => rolesOf(st).includes(r) || !myGroup().roles[st][r]); renderRoleModal(); }   // 서버에서 최신 역할·접속 인원을 받아 다시 그림
 }
 function renderRoleModal() {
     const st = stageOf(ui.screen), roles = myGroup().roles[st], me = state.user.name, lim = roleLimit();
     $('roleModalTitle').textContent = `🤝 ${STAGE_NAMES[st]} 역할을 선택하세요 ${lim.on ? `(최대 ${lim.max}개)` : '(여러 개 가능)'}`;
     const held = rolesOf(st).length, info = $('roleLimitInfo');
     info.classList.toggle('hidden', !lim.on);
-    if (lim.on) info.innerHTML = `👥 지금 접속한 조원 <b>${lim.n}명</b> (${lim.names.map(esc).join(', ')}) → 1인당 <b>최대 ${lim.max}개</b>`
-        + (lim.n < 4 ? '<br>아무도 안 맡은 역할은 <b>결석생 몫</b>이에요. 접속한 조원이 나눠 맡아요.' : '')
+    if (lim.on && lim.loading) info.innerHTML = '👥 접속한 조원 수를 확인하고 있어요…';
+    else if (lim.on) info.innerHTML = `👥 지금 접속한 조원 <b>${lim.n}명</b> (${lim.names.map(esc).join(', ')}) → 1인당 <b>최대 ${lim.max}개</b>`
+        + (lim.n < 4 ? '<br>4명이 안 되면 남은 역할은 접속한 조원이 나눠 맡아요.' : '')
         + (held > lim.max ? `<br><span class="text-red-600 font-bold">조원이 늘었어요! 역할을 ${held - lim.max}개 내려놓고 친구에게 넘겨주세요.</span>` : '');
     $('roleButtons').innerHTML = ROLE_KEYS.map(r => {
         const owner = roles[r], taken = owner && owner !== me, picked = ui.tempRoles.includes(r);
         const cls = picked ? 'border-orange-600 bg-orange-50' : 'border-gray-200 bg-gray-50';
-        const label = taken ? `${esc(owner)} 선택` : picked ? '내 선택 ✓' : (lim.on && lim.n < 4 ? '결석생 몫 · 선택 가능' : '선택 가능');
+        const label = taken ? `${esc(owner)} 선택` : (picked ? '내 선택 ✓' : '선택 가능');
         return `<button ${taken ? 'disabled' : ''} onclick="pickRole('${r}')" class="w-full py-3.5 px-4 rounded-2xl border-2 ${cls} flex items-center justify-between text-sm sm:text-base font-bold ${taken ? 'opacity-50 cursor-not-allowed' : ''}">
             <span>${roleText(r)}</span><span class="text-xs text-gray-500">${label}</span></button>`;
     }).join('');
@@ -2405,19 +2406,34 @@ function pickRole(r) {   // 누를 때마다 선택/해제 (접속 인원에 따
     ui.tempRoles = ui.tempRoles.includes(r) ? ui.tempRoles.filter(x => x !== r) : [...ui.tempRoles, r];
     renderRoleModal();
 }
-function confirmRole() {
+async function claimOnline(st, roles) {   // 서버에 역할 확정 요청 → 결과에 따라 안내
+    $('confirmRoleBtn').disabled = true;
+    const { data, error } = await Sync.sb.rpc('claim_roles', { p_stage: st, p_roles: roles, p_dev: DEV_MODE });
+    if (error) { $('confirmRoleBtn').disabled = false; if (/claim_roles|function/i.test(error.message)) { ROLE_RPC.ok = false; return 'fallback'; } toast('역할을 저장하지 못했어요. 다시 눌러 주세요.'); return 'fail'; }
+    ui.pres = { n: data.present, names: data.names || [], t: Date.now() };
+    await pull(true);
+    if (!data.ok) {
+        ui.tempRoles = rolesOf(st);
+        toast(data.reason === 'taken' ? `방금 ${data.owner} 학생이 먼저 고른 역할이 있어요. 다시 골라 주세요.` : `지금 조원 ${data.present}명이 접속해 있어서 1인당 ${data.max}개까지 맡을 수 있어요.`);
+        renderRoleModal(); return 'fail';
+    }
+    closeModal('roleModal'); afterRoleChange(); return 'ok';
+}
+async function confirmRole() {
     const st = stageOf(ui.screen); if (!st || ui.tempRoles.length === 0) return;
+    if (ONLINE && Sync.on && ROLE_RPC.ok && (await claimOnline(st, [...ui.tempRoles])) !== 'fallback') return;
     const roles = myGroup().roles[st], me = state.user.name;
     if (ui.tempRoles.some(r => roles[r] && roles[r] !== me)) { toast('이미 다른 조원이 선택한 역할이 있어요.'); renderRoleModal(); return; }
     const lim = roleLimit(), added = ui.tempRoles.filter(r => roles[r] !== me);
     if (lim.on && added.length && ui.tempRoles.length > lim.max) { toast(`1인당 ${lim.max}개까지 맡을 수 있어요. (지금 접속 ${lim.n}명)`); renderRoleModal(); return; }
     ROLE_KEYS.forEach(r => { if (roles[r] === me) roles[r] = null; });   // 이 단계의 기존 역할 반납 후 다시 배정
     ui.tempRoles.forEach(r => { roles[r] = me; });
-    logEvent('role', { stage: st, roles: [...ui.tempRoles], present: lim.n, max: lim.max });
+    logEvent('role', { stage: st, roles: [...ui.tempRoles], present: lim.n, max: lim.max, local: true });
     save(); closeModal('roleModal'); afterRoleChange();
 }
-function releaseRole() {   // 모두 내려놓으면 이 단계는 보기만 가능 (친구에게 양보할 때)
+async function releaseRole() {   // 모두 내려놓으면 이 단계는 보기만 가능 (친구에게 양보할 때)
     const st = stageOf(ui.screen); if (!st) return;
+    if (ONLINE && Sync.on && ROLE_RPC.ok && (await claimOnline(st, [])) !== 'fallback') return;
     const roles = myGroup().roles[st], me = state.user.name;
     ROLE_KEYS.forEach(r => { if (roles[r] === me) roles[r] = null; });
     save(); closeModal('roleModal'); afterRoleChange();
