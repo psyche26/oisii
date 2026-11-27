@@ -641,7 +641,8 @@ function setBadge(st) {
     Sync.status = st;
     const el = $('syncBadge'); if (!el) return;
     const T = { ok: '🟢 저장됨', saving: '🟡 저장 중…', err: '🔴 저장 실패 · 다시 시도 중', offline: '⚪ 연결 안 됨 · 이 기기에 임시 저장' };
-    el.textContent = T[st] || ''; el.classList.toggle('hidden', !(ONLINE && state.user && T[st]));
+    const rt = Sync.rt === 'SUBSCRIBED' ? ' · ⚡실시간' : ' · 🕒8초 확인';   // 실시간이 안 되면 8초마다 확인하는 방식으로 동작 중
+    el.textContent = T[st] ? T[st] + (st === 'offline' ? '' : rt) : ''; el.classList.toggle('hidden', !(ONLINE && state.user && T[st]));
 }
 
 function writeView(g, v) {                   // 합친 결과를 내 화면 데이터에 반영 (기기마다 다른 칸은 그대로 둠)
@@ -709,7 +710,7 @@ function subscribeGroup() {
     const code = state.user.group;
     Sync.chan = Sync.sb.channel(`grp-${COHORT}-${code}`).on('postgres_changes', { event: '*', schema: 'public', table: 'groups', filter: `code=eq.${code}` }, pl => {
         const r = pl.new; if (r && r.cohort === COHORT && r.version > Sync.ver && !Sync.pushing) applyRemote(r.data, r.version);
-    }).subscribe();
+    }).subscribe(st => { Sync.rt = st; setBadge(Sync.status); if (st !== 'SUBSCRIBED') console.warn('실시간 연결 상태:', st); });   // SUBSCRIBED = 실시간 연결됨
     Sync.poll = setInterval(() => { if (!document.hidden) pull(); }, 8000);       // 실시간이 끊겨도 8초마다 확인
     Sync.hb = setInterval(() => { if (!document.hidden) logEvent('hb'); }, 90000);  // 접속 중 표시
 }
