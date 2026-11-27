@@ -14,6 +14,10 @@
         } } } };
     </script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <!-- 서버 연결 도구(supabase-js): 첫 주소가 막히거나 실패하면 다른 주소에서 차례로 다시 받아 온다 -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+    <script>if (!window.supabase) document.write('<script src="https://unpkg.com/@supabase/supabase-js@2/dist/umd/supabase.js"><\/script>');</script>
+    <script>if (!window.supabase) document.write('<script src="https://fastly.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"><\/script>');</script>
     <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@500;700;900&family=Noto+Sans+KR:wght@400;500;700;900&display=swap" rel="stylesheet">
     <style>
         body { font-family: 'Noto Sans KR', 'Noto Sans JP', sans-serif; }
@@ -50,7 +54,20 @@
         <h1 class="text-xl sm:text-3xl font-black text-gray-800 leading-snug break-keep">일본에 한식 팝업 열기 프로젝트</h1>
         <img src="images/image000.png" alt="한식 팝업 스토어" class="w-72 sm:w-96 max-h-[36vh] object-contain my-2" onerror="this.style.display='none'">
         <p class="text-sm text-gray-600 mb-5 px-4 break-keep">선생님께 받은 <b>조 코드</b>를 입력하면,<br>같은 코드를 입력한 친구들과 한 조가 돼요.</p>
-        <div class="w-full max-w-[360px] space-y-3">
+        <div id="libWarn" class="hidden w-full max-w-[360px] mb-3 rounded-2xl border-2 border-red-300 bg-red-50 px-3 py-2.5 text-xs font-bold text-red-700 break-keep">⚠️ 인터넷 연결 도구를 불러오지 못해 <b>연습 모드</b>(이 기기에만 저장)로 열렸어요. 친구와 연결되지 않아요. 선생님께 알려 주세요.</div>
+        <div id="loginOnline" class="hidden w-full max-w-[360px] space-y-3">
+            <div id="olStep1" class="space-y-3">
+                <input id="olCode" type="text" maxlength="12" placeholder="조 번호 (예: 1)" class="w-full border-2 border-orange-200 rounded-2xl px-4 py-3 text-center text-xl font-black focus:outline-none focus:border-orange-500">
+                <button onclick="olFindGroup()" class="w-full py-3.5 rounded-2xl font-black text-base bg-orange-600 hover:bg-orange-700 text-white shadow-md">다음 ▶</button>
+            </div>
+            <div id="olStep2" class="hidden space-y-3">
+                <p id="olTitle" class="text-sm font-black text-gray-800"></p>
+                <div id="olNames" class="grid grid-cols-2 gap-2"></div>
+                <button onclick="olReset()" class="text-xs font-bold text-gray-500 underline">← 조 번호 다시 입력</button>
+            </div>
+            <p id="olMsg" class="text-xs font-bold text-red-600 min-h-[1rem] break-keep"></p>
+        </div>
+        <div id="loginLocal" class="w-full max-w-[360px] space-y-3">
             <input id="loginCode" type="text" inputmode="numeric" maxlength="6" placeholder="조 코드 (숫자)" class="w-full border-2 border-orange-200 rounded-2xl px-4 py-3 text-center text-xl font-black tracking-widest focus:outline-none focus:border-orange-500">
             <input id="loginName" type="text" maxlength="12" placeholder="내 이름" class="w-full border-2 border-orange-200 rounded-2xl px-4 py-3 text-center text-base font-bold focus:outline-none focus:border-orange-500">
             <button onclick="doLogin()" class="w-full py-3.5 rounded-2xl font-black text-base bg-orange-600 hover:bg-orange-700 text-white shadow-md">입장하기 🚪</button>
@@ -384,6 +401,7 @@
         </form>
     </aside>
 
+    <div id="syncBadge" class="hidden absolute top-2 right-3 z-40 text-[10px] font-bold px-2 py-0.5 rounded-full bg-white/90 border border-gray-200 text-gray-600"></div>
     <div id="toast" class="hidden absolute bottom-24 left-1/2 -translate-x-1/2 bg-gray-900 text-white text-xs sm:text-sm font-bold px-4 py-2.5 rounded-xl shadow-lg z-[60] max-w-[80%] text-center"></div>
 </div>
 
@@ -391,7 +409,12 @@
 /* =====================================================================
  * 1. 상수 (화면에 쓰이는 고정 데이터)
  * ===================================================================== */
-const STORAGE_KEY = 'oisii_state_v4';
+/* ---- Supabase 연결 설정 (공개키는 브라우저에 두어도 되는 키입니다. 비밀키/service_role 은 절대 넣지 마세요) ---- */
+const SB_URL = 'https://nubtxstfjdyxujnhadeh.supabase.co';
+const SB_KEY = 'sb_publishable_hknqZYIJRpMOW-D491GG8Q_pxWrdq70';
+const COHORT = new URLSearchParams(location.search).get('cohort') || 'main';   // 반 구분: ?cohort=test 로 연습용 반을 따로 쓸 수 있음
+const ONLINE = !!(window.supabase && SB_URL && SB_KEY) && !location.search.includes('offline');   // ?offline 이면 예전처럼 이 기기에만 저장
+const STORAGE_KEY = ONLINE ? 'oisii_online_v1_' + COHORT : 'oisii_state_v4';
 
 const ROLES = {
     food:      { icon: '🍱', name: '메뉴 담당' },
@@ -487,6 +510,15 @@ function demoPlans(groups) {
     if (empty(groups['3'])) groups['3'].plan = Object.assign(newPlan(), { city: 'namba', cityWhy: '관광객과 먹거리 구경하는 사람이 많은 곳이에요.', target: 'tourist', targetWhy: '걸으면서 가볍게 먹을 간식을 찾는 사람이 많아요.', concept: '난바를 걸으며 한 손으로 먹는 한국 김밥 가게',
         menuKr: '김밥', menuJp: 'キンパ', price: '600', menuWhy: '오니기리와 비슷해서 이해하기 쉽고 들고 다니기 편해요.', promoNote: '한국 놀이 제기차기를 하면 토핑을 주어 관광객이 재미있게 한국 문화를 경험하게 해요.', promo: '韓国の味を、ひとくちで。', theme: 'izakaya', careWhy: '처음 먹는 사람도 쉽게 먹도록 먹는 법을 설명해 줘요.' });
 }
+function demoRemap(st) {   // 온라인: 시연용 조는 x1·x2·x3 (진짜 1·2·3조와 섞이지 않게)
+    const m = c => 'x' + c, gs = {};
+    Object.entries(st.groups).forEach(([k, g]) => { g.code = m(k); gs[m(k)] = g; });
+    st.groups = gs;
+    st.dogam.forEach(c => { c.group = m(c.group); });
+    st.reactions.forEach(r => { r.to = m(r.to); r.from = m(r.from); });
+    const cm = {}; Object.entries(st.comments).forEach(([k, l]) => { cm[m(k)] = l.map(x => ({ ...x, from: m(x.from) })); });
+    st.comments = cm;
+}
 function initialState() {
     const g2 = newGroup('2', ['김민준']);
     g2.food = { code: 'gyudon', icon: '🍛', krName: '규동', jpName: 'ぎゅうどん' };
@@ -518,6 +550,7 @@ function initialState() {
         }
     };
     demoSigns(st.groups); demoPlans(st.groups);
+    if (ONLINE) demoRemap(st);
     return st;
 }
 
@@ -537,7 +570,247 @@ const Store = {
 };
 
 let state = Store.load();
-const save = () => Store.save(state);
+
+/* =====================================================================
+ * 2-1. Supabase 동기화 (온라인 모드)
+ *   - 우리 조 상태(state.groups[내 조])를 서버 groups.data 와 맞춘다.
+ *   - 바뀐 부분만 patch_group 으로 보내고(깊은 병합), 다른 기기에서 온 변경은 3-way 병합으로 받는다.
+ *   - 도감 카드 중 우리 조 것은 group.cards 로 함께 동기화한다 (투표·반응·다른 조 데이터는 2단계 작업).
+ *   - 새 기능으로 state 에 칸이 늘어도 이 코드는 고칠 필요가 없다 (자동으로 차이만 계산).
+ *   - 동기화하지 않는 칸: SYNC_SKIP (기기마다 다른 임시 값)
+ * ===================================================================== */
+const SYNC_SKIP = ['members', 'relay.fb', 'relay.msg', 'relay.log'];
+const Sync = { sb: null, on: false, base: null, ver: -1, timer: null, pushing: false, chan: null, poll: null, hb: null, evq: [], uid: null, authP: null, skipEl: null, pending: false, status: 'off' };
+const isObj = v => v && typeof v === 'object' && !Array.isArray(v);
+const clone = o => JSON.parse(JSON.stringify(o));
+const sj = o => JSON.stringify(o, (k, v) => isObj(v) ? Object.keys(v).sort().reduce((a, x) => (a[x] = v[x], a), {}) : v);   // 키 순서와 상관없이 같은지 비교
+
+function syncView(g) {                       // 서버로 보낼 모양
+    const v = clone(g);
+    SYNC_SKIP.forEach(p => { const ks = p.split('.'), last = ks.pop(); const o = ks.reduce((a, k) => (a == null ? a : a[k]), v); if (o) delete o[last]; });
+    v.cards = {};
+    state.dogam.filter(c => c.group === g.code).forEach(c => { v.cards[c.author] = clone(c); });
+    return v;
+}
+function deepFill(def, v) {                  // 새로 생긴 칸은 기본값으로 채움
+    if (!isObj(def) || !isObj(v)) return v === undefined ? def : v;
+    const out = clone(def);
+    Object.keys(v).forEach(k => { out[k] = (k in def) ? deepFill(def[k], v[k]) : v[k]; });
+    return out;
+}
+function diff(a, b, path) {                  // a→b 로 바뀐 부분만 (지워진 키가 있으면 그 객체를 통째로 교체. 단 cards 는 지운 칸만 null 로 표시)
+    if (isObj(a) && isObj(b)) {
+        const out = {}; let n = 0;
+        if (path === 'cards') Object.keys(a).forEach(k => { if (!(k in b)) { out[k] = { __replace: null }; n++; } });
+        else if (Object.keys(a).some(k => !(k in b))) return { __replace: b };
+        Object.keys(b).forEach(k => {
+            if (!(k in a)) { out[k] = b[k]; n++; return; }
+            if (sj(a[k]) === sj(b[k])) return;
+            out[k] = diff(a[k], b[k], k); n++;
+        });
+        return n ? out : undefined;
+    }
+    return sj(a) === sj(b) ? undefined : b;
+}
+function diffTop(a, b) {
+    const out = {};
+    Object.keys(b).forEach(k => {
+        if (!(k in a)) { out[k] = b[k]; return; }
+        if (sj(a[k]) === sj(b[k])) return;
+        const d = diff(a[k], b[k], k); if (d !== undefined) out[k] = d;
+    });
+    Object.keys(a).forEach(k => { if (!(k in b)) out[k] = { __replace: null }; });
+    return out;
+}
+function merge3(b, l, r) {                   // b: 마지막으로 서버와 맞춘 값, l: 내 값, r: 서버의 새 값
+    if (isObj(l) && isObj(r)) {
+        const bb = isObj(b) ? b : {}, out = {};
+        new Set([...Object.keys(l), ...Object.keys(r)]).forEach(k => {
+            const inL = k in l, inR = k in r, inB = k in bb;
+            if (inL && inR) out[k] = merge3(bb[k], l[k], r[k]);
+            else if (inL) { if (!(inB && sj(bb[k]) === sj(l[k]))) out[k] = l[k]; }      // 서버에서 지워짐: 내가 안 건드렸으면 따라 지움
+            else { if (!(inB && sj(bb[k]) === sj(r[k]))) out[k] = r[k]; }               // 내가 지움: 서버가 안 바뀌었으면 그대로 지움
+        });
+        return out;
+    }
+    return sj(l) === sj(b) ? r : l;          // 내가 안 바꿨으면 서버 값, 바꿨으면 내 값
+}
+
+function setBadge(st) {
+    Sync.status = st;
+    const el = $('syncBadge'); if (!el) return;
+    const T = { ok: '🟢 저장됨', saving: '🟡 저장 중…', err: '🔴 저장 실패 · 다시 시도 중', offline: '⚪ 연결 안 됨 · 이 기기에 임시 저장' };
+    el.textContent = T[st] || ''; el.classList.toggle('hidden', !(ONLINE && state.user && T[st]));
+}
+
+function writeView(g, v) {                   // 합친 결과를 내 화면 데이터에 반영 (기기마다 다른 칸은 그대로 둠)
+    const keep = { members: g.members, fb: g.relay && g.relay.fb, msg: g.relay && g.relay.msg, log: g.relay && g.relay.log };
+    const cards = v.cards || {}; const rest = clone(v); delete rest.cards;
+    const n = deepFill(newGroup(g.code), rest);
+    n.members = keep.members || n.members;
+    if (n.relay) { n.relay.fb = keep.fb ?? null; n.relay.msg = keep.msg ?? ''; n.relay.log = keep.log || []; }
+    Object.keys(g).forEach(k => delete g[k]); Object.assign(g, n);
+    state.dogam = state.dogam.filter(c => c.group !== g.code).concat(Object.values(cards));
+}
+function rerender() {
+    const ae = document.activeElement;
+    const typing = ae && /^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName) && !ae.closest('#screen-login');
+    if (typing || ui.rec) { Sync.pending = true; Sync.skipEl = typing ? ae : null; return; }   // 입력·말하는 중에는 끝난 뒤에 갱신
+    Sync.pending = false; Sync.skipEl = null;
+    afterRoleChange();
+    if (ui.screen === 'step1') setTab('dogam', ui.dogamFilter);
+}
+document.addEventListener('focusout', () => setTimeout(() => { if (Sync.pending) rerender(); }, 60));
+
+function applyRemote(data, ver) {
+    const g = myGroup(); if (!g) return;
+    if (data && isObj(data.cards)) { data = clone(data); Object.keys(data.cards).forEach(k => { if (data.cards[k] == null) delete data.cards[k]; }); }   // 지운 카드 표시(null)는 없는 것으로 취급
+    const lv = syncView(g);
+    if (!Sync.base) Sync.base = syncView(newGroup(g.code));   // 처음 입장: 기본값이 기준 → 서버에 있는 값이 이긴다
+    const merged = merge3(Sync.base, lv, data || {});
+    Sync.base = clone(data || {}); Sync.ver = ver;
+    if (sj(merged) !== sj(lv)) { writeView(g, merged); rerender(); }
+    if (sj(merged) !== sj(data || {})) schedulePush();
+    else if (Sync.status !== 'saving') setBadge('ok');
+}
+function schedulePush(delay = 700) {
+    if (!ONLINE || !Sync.on) return;
+    setBadge('saving'); clearTimeout(Sync.timer); Sync.timer = setTimeout(push, delay);
+}
+async function push() {
+    if (!Sync.on || !state.user) return;
+    if (Sync.pushing) { schedulePush(400); return; }
+    if (Sync.base === null) { await pull(); if (Sync.base === null) { setBadge('offline'); schedulePush(5000); } return; }
+    const g = myGroup(), v = syncView(g), p = diffTop(Sync.base, v);
+    if (!Object.keys(p).length) { setBadge('ok'); return; }
+    Sync.pushing = true;
+    const { data, error } = await Sync.sb.rpc('patch_group', { p_patch: p });
+    Sync.pushing = false;
+    if (error) { setBadge(navigator.onLine ? 'err' : 'offline'); schedulePush(4000); return; }
+    const expected = Sync.ver + 1;
+    Sync.base = v; Sync.ver = data;
+    if (data !== expected) await pull(true);         // 그 사이 친구도 저장했음 → 최신 내용 받아 합침
+    if (sj(syncView(myGroup())) !== sj(Sync.base)) schedulePush(300); else setBadge('ok');
+}
+async function pull(force) {
+    if (!Sync.on || !state.user) return;
+    const { data, error } = await Sync.sb.from('groups').select('data,version').eq('cohort', COHORT).eq('code', state.user.group).maybeSingle();
+    if (error || !data) { if (error) setBadge('offline'); return; }
+    if (force || Sync.base === null || data.version > Sync.ver) applyRemote(data.data, data.version);
+    else if (Sync.status === 'offline') setBadge('ok');
+}
+function subscribeGroup() {
+    const code = state.user.group;
+    Sync.chan = Sync.sb.channel(`grp-${COHORT}-${code}`).on('postgres_changes', { event: '*', schema: 'public', table: 'groups', filter: `code=eq.${code}` }, pl => {
+        const r = pl.new; if (r && r.cohort === COHORT && r.version > Sync.ver && !Sync.pushing) applyRemote(r.data, r.version);
+    }).subscribe();
+    Sync.poll = setInterval(() => { if (!document.hidden) pull(); }, 8000);       // 실시간이 끊겨도 8초마다 확인
+    Sync.hb = setInterval(() => { if (!document.hidden) logEvent('hb'); }, 90000);  // 접속 중 표시
+}
+async function startSync() {
+    const u = state.user, s = state.sync;
+    Sync.base = (s && s.code === u.group && s.cohort === COHORT && s.base) ? s.base : null;
+    Sync.ver = -1; Sync.on = true;
+    await pull(true);
+    if (Sync.base !== null && sj(syncView(myGroup())) !== sj(Sync.base)) await push();   // 기본값을 서버에 먼저 채워 둠 (이후에는 바뀐 부분만 전송)
+    if (!Sync.chan) subscribeGroup();
+    if (Sync.base === null) setBadge('offline'); else setBadge(Sync.status === 'saving' ? 'saving' : 'ok');
+}
+async function olTeardown() {
+    clearTimeout(Sync.timer);
+    try { if (Sync.base) { const p = diffTop(Sync.base, syncView(myGroup())); if (Object.keys(p).length) await Sync.sb.rpc('patch_group', { p_patch: p }); } } catch (e) { }
+    await flushEvents();
+    Sync.on = false; clearInterval(Sync.poll); clearInterval(Sync.hb);
+    try { if (Sync.chan) await Sync.sb.removeChannel(Sync.chan); } catch (e) { }
+    Sync.chan = null; Sync.base = null; Sync.ver = -1;
+    try { await Sync.sb.auth.signOut(); } catch (e) { }
+    Sync.authP = ensureAuth(); $('syncBadge').classList.add('hidden');
+}
+
+/* ---- 활동 기록 (연구·교사 대시보드용) ---- */
+function logEvent(type, payload, step) {
+    if (!ONLINE || !Sync.on) return;
+    Sync.evq.push({ type, step: step || ui.screen, payload: payload || {}, t: Date.now() });
+    if (Sync.evq.length >= 20) flushEvents();
+}
+async function flushEvents() {
+    if (!Sync.sb || !Sync.evq.length) return;
+    const batch = Sync.evq.splice(0);
+    const { error } = await Sync.sb.rpc('log_events', { p_events: batch.map(e => ({ type: e.type, step: e.step, payload: { ...e.payload, _t: e.t } })) });
+    if (error) { Sync.evq.unshift(...batch); if (Sync.evq.length > 500) Sync.evq.length = 500; }
+}
+setInterval(flushEvents, 6000);
+window.addEventListener('pagehide', () => { flushEvents(); });
+
+/* ---- 로그인(익명 인증) + 명단에서 이름 고르기 ---- */
+async function ensureAuth() {
+    const sb = Sync.sb;
+    let { data: { session } } = await sb.auth.getSession();
+    if (!session) {
+        const r = await sb.auth.signInAnonymously();
+        if (r.error) throw r.error;
+        session = r.data.session;
+    }
+    Sync.uid = session.user.id;
+    return session;
+}
+function olMsg(t) { const el = $('olMsg'); if (el) el.textContent = t || ''; }
+function olReset() {
+    if (!ONLINE) return;
+    $('olStep1').classList.remove('hidden'); $('olStep2').classList.add('hidden'); $('olNames').innerHTML = ''; olMsg('');
+}
+async function olFindGroup() {
+    const code = $('olCode').value.trim();
+    if (!code) { olMsg('조 번호를 입력해 주세요.'); return; }
+    olMsg('확인 중…');
+    try { await Sync.authP; } catch (e) { olMsg('접속할 수 없어요. 인터넷을 확인하거나 선생님께 알려 주세요. (' + (e.message || e) + ')'); return; }
+    const { data, error } = await Sync.sb.rpc('group_roster', { p_cohort: COHORT, p_group: code });
+    if (error) { olMsg('명단을 불러오지 못했어요. (' + error.message + ')'); return; }
+    if (!data || !data.length) { olMsg('이 조 번호의 명단이 없어요. 번호를 다시 확인하거나 선생님께 말해 주세요.'); return; }
+    Sync.roster = { code, list: data };
+    $('olTitle').textContent = `${groupLabel(code)} · 내 이름을 눌러 주세요`;
+    $('olNames').innerHTML = data.map((r, i) => `<button onclick="olJoin(${i})" class="py-3 rounded-2xl border-2 border-orange-300 bg-orange-50 hover:bg-orange-100 font-black text-gray-800">${esc(r.name)}${r.needs_pin ? ' 🔒' : ''}</button>`).join('');
+    $('olStep1').classList.add('hidden'); $('olStep2').classList.remove('hidden'); olMsg('');
+}
+async function olJoin(i) {
+    const { code, list } = Sync.roster, r = list[i]; let pin = null;
+    if (r.needs_pin) { pin = prompt(`${r.name} 님의 비밀번호(PIN)를 입력해 주세요.`); if (pin === null) return; }
+    olMsg('입장 중…');
+    const { data, error } = await Sync.sb.rpc('join_group', { p_roster: r.id, p_pin: pin });
+    if (error) { olMsg(/pin/i.test(error.message) ? '비밀번호가 맞지 않아요.' : '입장하지 못했어요. (' + error.message + ')'); return; }
+    state.user = { name: data.name, group: data.group, cohort: data.cohort, online: true };
+    state.groups[data.group] = newGroup(data.group, list.map(x => x.name));
+    state.dogam = state.dogam.filter(c => c.group !== data.group);
+    state.sync = null; ui.dogamFilter = 'my';
+    Store.save(state);
+    await startSync();
+    save(); go('main'); olMsg('');
+    logEvent('login', { device: navigator.userAgent.slice(0, 80) }, 'login');
+}
+async function bootOnline() {
+    try {
+        Sync.sb = window.supabase.createClient(SB_URL, SB_KEY, { auth: { persistSession: true, autoRefreshToken: true } });
+        Sync.authP = ensureAuth();
+        await Sync.authP;
+    } catch (e) {
+        console.warn('supabase 연결 실패', e);
+        if (state.user && state.user.online) setBadge('offline');
+        olMsg('접속할 수 없어요. 인터넷을 확인해 주세요. (익명 로그인 설정이 꺼져 있을 수도 있어요)');
+        setTimeout(() => { if (!Sync.sb || !Sync.uid) bootOnline(); }, 10000);
+        return;
+    }
+    if (!(state.user && state.user.online)) { if (state.user) { state.user = null; save(); go('login'); } return; }
+    const { data: m, error } = await Sync.sb.from('members').select('name,cohort,group_code').eq('user_id', Sync.uid).maybeSingle();
+    if (error) { setBadge('offline'); await startSync(); return; }                      // 네트워크 문제: 일단 이 기기에서 계속
+    if (!m || m.name !== state.user.name || m.group_code !== state.user.group || m.cohort !== COHORT) {
+        state.user = null; state.sync = null; save(); go('login'); olReset(); return;   // 서버 기록과 다름 → 다시 입장
+    }
+    await startSync();
+}
+const save = () => {
+    if (ONLINE && Sync.on && state.user) { state.sync = { code: state.user.group, cohort: COHORT, base: Sync.base, ver: Sync.ver }; schedulePush(); }
+    Store.save(state);
+};
 
 /* UI 전용 임시 상태 (저장하지 않음) */
 const ui = { screen: 'main', dogamFilter: 'my', tempRoles: [], dg: null };
@@ -555,7 +828,7 @@ const stageOf = screen => ROLE_STAGES.includes(screen) ? screen : null;
 const rolesOf = stage => ROLE_KEYS.filter(r => myGroup().roles[stage][r] === state.user.name);   // 한 사람이 여러 역할을 맡을 수 있음
 const myRoles = () => { const st = stageOf(ui.screen); return st ? rolesOf(st) : []; };   // 지금 화면(단계)에서의 내 역할들
 const hasRole = r => myRoles().includes(r);
-const groupLabel = n => /^\d{1,2}$/.test(String(n)) ? `${n}조` : `조 ${n}`;
+const groupLabel = n => /^x\d+$/.test(String(n)) ? `예시 ${String(n).slice(1)}조` : /^\d{1,2}$/.test(String(n)) ? `${n}조` : `조 ${n}`;
 const myVotes = () => (state.votes[`${state.user.group}:${state.user.name}`] ||= []);
 
 let toastTimer;
@@ -633,6 +906,7 @@ const KATA = 'アイウエオカキクケコサシスセソタチツテトナニ
 const DESC_MIN = 15;            // 한 줄 설명 최소 글자 수 (유래·특징·재료 등을 조사해서 쓰기)
 const DESC_MAX = 80;            // 한 줄 설명 최대 글자 수 (도감에서는 전부 보여 줍니다)
 const EXTRA_TILES = 5;          // 정답 글자 외에 섞어 넣는 헷갈리는 글자 수
+const newCardId = () => ONLINE ? Date.now() * 10 + Math.floor(Math.random() * 10) : Math.max(0, ...state.dogam.map(x => x.id)) + 1;   // 온라인: 친구 기기와 겹치지 않는 번호
 const menuById = id => MENU_POOL.find(m => m.id === id) || null;
 const menuClaim = id => state.dogam.find(c => c.code === id) || null;    // 이 메뉴를 이미 고른 카드(선점)
 const isMine = c => !!c && c.group === state.user.group && c.author === state.user.name;
@@ -678,6 +952,7 @@ function go(name) {
         return;
     }
     stopListen();
+    if (name !== ui.screen) logEvent('screen', { to: name });
     ui.screen = name;
     syncGuideVisibility();
     document.querySelectorAll('.screen').forEach(s => s.classList.toggle('active', s.id === `screen-${name}`));
@@ -761,7 +1036,7 @@ function setTab(group, tab) {
  * ===================================================================== */
 function syncBindings() {
     const g = myGroup(), roles = myRoles();
-    document.querySelectorAll('[data-bind]').forEach(el => { el.value = getPath(g, el.dataset.bind) ?? ''; });
+    document.querySelectorAll('[data-bind]').forEach(el => { if (el === Sync.skipEl) return; el.value = getPath(g, el.dataset.bind) ?? ''; });
     document.querySelectorAll('[data-role]').forEach(el => { el.disabled = !roles.includes(el.dataset.role); });
     document.querySelectorAll('[data-section]').forEach(el => el.classList.toggle('mine', roles.includes(el.dataset.section)));
     document.querySelectorAll('.js-role-badge').forEach(el => { el.textContent = roles.length ? roles.map(roleText).join(' + ') : '없음 (지금은 보기만 가능)'; });
@@ -1118,7 +1393,7 @@ function saveDogamCard() {
     const oldCode = c && c.code, oldJp = c && c.jpName;
     if (c) Object.assign(c, { code: m.id, icon, jpName: m.kana, krName: m.kr, desc });
     else {
-        const id = Math.max(0, ...state.dogam.map(x => x.id)) + 1;
+        const id = newCardId();
         c = { id, group: state.user.group, author: state.user.name, code: m.id, icon, jpName: m.kana, krName: m.kr, desc, likes: 0 };
         state.dogam.push(c);
     }
@@ -1592,6 +1867,7 @@ function confirmSpoken() {
     const l = rl.lines[rl.cursor], fb = rl.fb || { tries: 0, best: 0 };
     (rl.log ||= []).push({ r: rl.round, i: rl.cursor, by: l.by, jp: l.jp, tries: fb.tries || 0, best: Math.round((fb.best || 0) * 100) / 100, via: fb.passed ? 'auto' : 'peer', t: Date.now() });
     if (rl.log.length > 600) rl.log.shift();
+    logEvent('speak', rl.log[rl.log.length - 1], 'step3');
     rl.fb = null; rl.cursor++; rl.phase = 'choose'; relayAdvance(rl); save(); renderRelay(); refreshDerived();
 }
 function resetRelay() { if (!confirm('3단계 회화를 처음부터 다시 할까요?')) return; stopListen(); const g = myGroup(), old = g.relay.log || []; g.relay = newRelay(); g.relay.log = old; save(); renderRelay(); refreshDerived(); }
@@ -2137,7 +2413,10 @@ function doLogin() {
     ui.dogamFilter = 'my';
     save(); go('main');
 }
-function logout() { state.user = null; save(); go('login'); }
+async function logout() {
+    if (ONLINE && Sync.on) { await olTeardown(); }
+    state.user = null; state.sync = null; save(); go('login'); olReset();
+}
 
 function openAnke() {
     if (!ANKE_URL) { toast('현지반응 사이트 주소가 아직 설정되지 않았어요.'); return; }
@@ -2151,7 +2430,11 @@ function devReset() { if (confirm('저장된 테스트 데이터를 모두 지�
 fillPlanSelects();
 setupDevBar();
 ['loginCode', 'loginName'].forEach(id => $(id).addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); }));
+$('olCode').addEventListener('keydown', e => { if (e.key === 'Enter') olFindGroup(); });
+$('loginOnline').classList.toggle('hidden', !ONLINE); $('loginLocal').classList.toggle('hidden', ONLINE);
+$('libWarn').classList.toggle('hidden', ONLINE || location.search.includes('offline'));   // 연결 도구를 못 불러와 연습 모드로 떨어졌을 때 알림
 go('main');
+if (ONLINE) bootOnline();
 </script>
 </body>
 </html>
