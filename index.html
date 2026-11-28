@@ -2691,7 +2691,48 @@ const PR_COINS = [1, 5, 10, 50, 100, 500], PR_BILLS = [1000, 2000, 5000, 10000];
 const PR_MART = [
     { n: 900, kana: 'だいず', kr: '콩(대두)' }, { n: 138, kana: 'たまご', kr: '달걀 6개' }, { n: 200, kana: 'かぼちゃ', kr: '호박' },
     { n: 250, kana: 'にんにく', kr: '마늘' }, { n: 330, kana: 'いんげん', kr: '강낭콩' }, { n: 470, kana: 'アスパラガス', kr: '아스파라거스' },
-    { n: 580, kana: 'もも', kr: '복숭아 4개' }, { n: 600, kana: 'オクラ', kr: '오크라' }, { n: 720, kana: 'うめぼし', kr: '매실 절임' }, { n: 880, kana: 'すいか', kr: '수박' }
+    { n: 580, kana: 'もも', kr: '복숭아 4개' }, { n: 600, kana: 'オクラ', kr: '오크라' }, { n: 720, kana: 'うめぼし', kr: '매실 절임' }, { n: 880, kana: 'すいか', kr: '수박' },
+    /* 2026 추가 40장 */
+    { n: 1280, kana: 'にぎりずし', kr: '모둠 초밥 8개' },
+    { n: 1480, kana: 'いちご', kr: '딸기 1팩' },
+    { n: 1580, kana: 'バナナ', kr: '바나나' },
+    { n: 3980, kana: 'こしひかり', kr: '고시히카리 쌀 5kg' },
+    { n: 9362, kana: 'ぎゅうにく', kr: '국산 소고기 (스키야키용)' },
+    { n: 4050, kana: 'まぐろの さしみ', kr: '참치회 모둠' },
+    { n: 2951, kana: 'えびずし', kr: '새우 초밥 5개' },
+    { n: 7980, kana: 'まつたけ', kr: '송이버섯' },
+    { n: 1560, kana: 'ミックスサンド', kr: '믹스 샌드위치' },
+    { n: 1298, kana: 'ブロッコリー', kr: '브로콜리' },
+    { n: 5800, kana: 'メロン', kr: '머스크멜론' },
+    { n: 6980, kana: 'わぎゅう', kr: '와규 (스키야키용)' },
+    { n: 4230, kana: 'シャインマスカット', kr: '샤인머스캣' },
+    { n: 1170, kana: 'えびずし', kr: '새우 초밥 5개' },
+    { n: 158, kana: 'トマト', kr: '토마토 1개' },
+    { n: 298, kana: 'レタス', kr: '양상추' },
+    { n: 498, kana: 'サーモン', kr: '연어 100g' },
+    { n: 980, kana: 'まぐろの さしみ', kr: '참치회 100g' },
+    { n: 1180, kana: 'みかん', kr: '귤 1봉지' },
+    { n: 1860, kana: 'ぶたにく', kr: '돼지고기' },
+    { n: 1520, kana: 'トマト', kr: '토마토 1봉지' },
+    { n: 2800, kana: 'まぐろずし', kr: '참치 초밥 5개' },
+    { n: 567, kana: 'キャベツ', kr: '양배추' },
+    { n: 1150, kana: 'たまごサンド', kr: '달걀 샌드위치' },
+    { n: 314, kana: 'ぎゅうにゅう', kr: '우유 1L' },
+    { n: 560, kana: 'にんじん', kr: '당근 1봉지' },
+    { n: 685, kana: 'コーヒー', kr: '캔커피 6개' },
+    { n: 790, kana: 'たまねぎ', kr: '양파 1망' },
+    { n: 877, kana: 'さつまいも', kr: '고구마 1봉지' },
+    { n: 3180, kana: 'わぎゅう', kr: '와규 (스테이크용)' },
+    { n: 2400, kana: 'いちご', kr: '딸기 (아마오우)' },
+    { n: 2200, kana: 'わぎゅう', kr: '와규 (스키야키용)' },
+    { n: 5500, kana: 'わぎゅう', kr: '와규 (스키야키용)' },
+    { n: 4200, kana: 'わぎゅう', kr: '와규 (스테이크용)' },
+    { n: 4700, kana: 'わぎゅう', kr: '와규 (스키야키용)' },
+    { n: 198, kana: 'りんご', kr: '사과' },
+    { n: 850, kana: 'サーモン', kr: '연어' },
+    { n: 2480, kana: 'おこめ', kr: '쌀 5kg' },
+    { n: 2990, kana: 'ふくぶくろ', kr: '복주머니 (새해 럭키백)' },
+    { n: 3450, kana: 'うなじゅう', kr: '장어덮밥 도시락' }
 ];
 /* 다코야키 팬 구멍 위치(그림 크기 대비 %): 4줄 × 6칸 중 앞 10칸을 쓴다 */
 const PAN_X = [21.1, 31.7, 42.3, 52.8, 63.4, 74.0], PAN_Y = [29.3, 42.9, 56.8, 70.6];
@@ -2932,11 +2973,8 @@ function prNewPrice(onlyWrong) {
     let items;
     if (onlyWrong && ui.prPrice && ui.prPrice.wrong.length) items = ui.prPrice.wrong.map(x => ({ ...x }));
     else {
-        /* 마트 사진 7문항(백 단위) + 식당 메뉴 2문항(천 단위) + 돈 1문항(절반은 만 엔) */
-        const mart = shuffle(PR_MART).slice(0, 7).map(m => ({ kind: 'mart', img: `images/mart_${m.n}.jpg`, name: m.kana, kr: m.kr, n: m.n }));
-        const menus = shuffle(MENU_POOL.filter(m => MENU_PRICE[m.id] >= 1000)).slice(0, 2).map(m => ({ kind: 'menu', id: m.id, icon: m.icon, name: m.kana, kr: m.kr, n: MENU_PRICE[m.id] }));
-        const bill = Math.random() < 0.5 ? 10000 : shuffle([500, 1000, 2000, 5000])[0];
-        items = shuffle([...mart, ...menus, { kind: 'money', n: bill }]);
+        /* 마트 사진 50장 중 10장을 무작위로 (사진에서 가장 크게 보이는 금액이 정답) */
+        items = shuffle(PR_MART).slice(0, 10).map(m => ({ kind: 'mart', img: `images/mart_${m.n}.jpg`, name: m.kana, kr: m.kr, n: m.n }));
     }
     ui.prPrice = { items, i: 0, tries: 0, score: 0, wrong: [], done: false, retry: !!onlyWrong, msg: '', revealed: false, start: Date.now() };
     setTimeout(() => { if (ui.screen === 'practice' && ui.prTab === 'price') speakJa('いくらですか', true); }, 300);
@@ -2992,7 +3030,7 @@ function prPriceHTML() {
     }
     const it = p.items[p.i];
     const shown = p.revealed || p.ok;
-    const pic = it.kind === 'mart' ? `<img src="${it.img}" alt="${esc(it.kr)}" class="w-full max-h-[46vh] object-contain rounded-2xl border border-gray-200 bg-gray-50"><p class="text-xs font-bold text-gray-600 mt-1">${shown ? `<span class="jp-font">${esc(it.name)}</span> · ${esc(it.kr)}` : '🔎 사진 속 가격표에서 값을 찾아 말해요'}</p>`
+    const pic = it.kind === 'mart' ? `<img src="${it.img}" alt="${esc(it.kr)}" class="w-full max-h-[46vh] object-contain rounded-2xl border border-gray-200 bg-gray-50"><p class="text-xs font-bold text-gray-600 mt-1">${shown ? `<span class="jp-font">${esc(it.name)}</span> · ${esc(it.kr)}` : '🔎 가격표에서 가장 크게 쓰인 금액을 말해요'}</p>`
         : it.kind === 'menu' ? `${picHTML(it.id, it.icon, 'w-24 h-24', 'text-6xl')}<p class="jp-font text-base font-black text-gray-900 mt-1">${esc(it.name)}</p>`
         : `${moneyPic(it.n, it.n < 1000 ? 'w-28 h-28' : 'w-64 h-32 max-w-full', 'text-xl')}<p class="text-xs font-bold text-gray-600 mt-1">이 돈은 얼마예요?</p>`;
     return `<div class="flex items-center justify-between text-xs font-bold text-gray-600"><span>${p.retry ? '🔁 틀린 문제 다시' : '🗣️ 가격 말하기'} · ${p.i + 1} / ${p.items.length}</span><span>한 번에 맞힘 ${p.score}</span></div>
