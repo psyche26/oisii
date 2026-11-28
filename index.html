@@ -1889,14 +1889,44 @@ function confirmSpoken() {
     rl.fb = null; rl.hint = false; rl.msg = ''; ui.free = null; rl.cursor++; rl.phase = 'choose'; relayAdvance(rl); save(); renderRelay(); refreshDerived();
 }
 function resetRelay() { if (!confirm('3단계 회화를 처음부터 다시 할까요?')) return; stopListen(); const g = myGroup(), old = g.relay.log || []; g.relay = newRelay(); g.relay.log = old; save(); renderRelay(); refreshDerived(); }
-function speakJa(t) {
+function speakJa(t, auto) {   // auto=true: 자동 재생(안내창 없이, 앞의 소리를 끊지 않고 이어서)
     try {
         if (!('speechSynthesis' in window)) throw 0;
         const v = speechSynthesis.getVoices().find(x => /^ja/i.test(x.lang));
-        if (!v) { toast('이 기기에는 일본어 음성이 없어요. 소리 내어 직접 읽어 보세요!'); return; }
-        const u = new SpeechSynthesisUtterance(t); u.lang = 'ja-JP'; u.voice = v; speechSynthesis.cancel(); speechSynthesis.speak(u);
-    } catch (e) { toast('이 기기에서는 소리 듣기를 쓸 수 없어요.'); }
+        if (!v) { if (!auto) toast('이 기기에는 일본어 음성이 없어요. 소리 내어 직접 읽어 보세요!'); return; }
+        const u = new SpeechSynthesisUtterance(t); u.lang = 'ja-JP'; u.voice = v; u.rate = 0.95;
+        if (!auto) speechSynthesis.cancel();
+        speechSynthesis.speak(u);
+    } catch (e) { if (!auto) toast('이 기기에서는 소리 듣기를 쓸 수 없어요.'); }
 }
+/* ---- 3단계: 컴퓨터 대사가 화면에 나타나면 자동으로 소리 내기 ----
+ * 같은 조 태블릿 4대가 한꺼번에 소리 내면 겹치므로, "그다음에 대답할 학생"의 기기에서만 재생한다.
+ * (마지막 대사처럼 다음 차례가 없으면 바로 앞에서 말한 학생의 기기. 오프라인·한 기기 모드는 그 기기에서 재생)
+ * 다시 듣고 싶으면 말풍선의 🔊를 누른다. 🔈 버튼으로 이 기기의 자동 듣기를 끌 수 있다. */
+const AUTO_KEY = 'oisii_autospeak';
+const autoOn = () => { try { return localStorage.getItem(AUTO_KEY) !== 'off'; } catch (e) { return true; } };
+function toggleAutoSpeak() { try { localStorage.setItem(AUTO_KEY, autoOn() ? 'off' : 'on'); } catch (e) { } if (!autoOn()) try { speechSynthesis.cancel(); } catch (e) { } renderRelay(); }
+function relayAutoSpeak(rl) {
+    const revealed = rl.phase === 'announce' || rl.round === 0 ? 0 : rl.phase === 'end' ? rl.lines.length : rl.cursor + (rl.phase === 'speak' ? 1 : 0);
+    const keyOf = i => `${rl.round}:${(rl.card && rl.card.A) || ''}:${i}`, first = !ui.said;
+    ui.said ||= new Set();
+    const toSay = [];
+    for (let i = 0; i < revealed; i++) {
+        const l = rl.lines[i], k = keyOf(i);
+        if (l.student || ui.said.has(k)) continue;
+        ui.said.add(k);
+        if (first) continue;                                   // 화면을 처음 열었을 때 이미 지나간 대사는 다시 읽지 않음
+        const next = rl.lines.slice(i + 1).find(x => x.student), prev = rl.lines.slice(0, i).reverse().find(x => x.student);
+        const target = (next || prev || {}).by;
+        if (!ONLINE || !target || target === state.user.name) toSay.push(l.jp);
+    }
+    if (toSay.length && autoOn() && !ui.rec) setTimeout(() => toSay.forEach(t => speakJa(t, true)), 350);   // 말풍선이 뜬 뒤 읽기
+}
+/* 아이패드 등은 첫 소리를 "화면을 누를 때"만 허락하므로, 첫 터치 때 소리 없는 문장으로 잠금을 풀어 둔다 */
+document.addEventListener('pointerdown', function unlockTTS() {
+    try { const u = new SpeechSynthesisUtterance(' '); u.volume = 0; speechSynthesis.speak(u); } catch (e) { }
+    document.removeEventListener('pointerdown', unlockTTS);
+}, { once: true });
 /* ---- 3단계 발화 피드백: 음성 인식(Web Speech)이 들은 말을 정답 문장과 비교해 고칠 곳을 알려 준다 ----
  * 인식 결과는 한자 섞인 글로 올 수 있어서, 숫자·사람 수·개수·금액·메뉴 이름·인사말을 먼저 가나로 바꾼 뒤(jaHeard)
  * 글자 단위 LCS 로 맞춘다(jaAlign). 맞은 글자는 초록, 놓친 글자는 빨강으로 보여 주고, 덩어리별로 고칠 점을 안내한다. */
@@ -2006,6 +2036,7 @@ function stopListen() { if (ui.rec) { try { ui.rec.abort(); } catch (e) { } } ui
 function toggleListen() {
     const rl = myGroup().relay; if (rl.phase !== 'speak' && rl.phase !== 'choose') return;
     if (ui.rec) { try { ui.rec.stop(); } catch (e) { } return; }
+    try { speechSynthesis.cancel(); } catch (e) { }   // 컴퓨터 목소리가 마이크에 섞이지 않게
     if (!JA_SR) { toast('이 기기는 음성 인식을 지원하지 않아요. 조원 확인으로 진행해요.'); return; }
     const l = rl.lines[rl.cursor], r = new JA_SR(); let got = false;
     r.lang = 'ja-JP'; r.interimResults = false; r.maxAlternatives = 5; r.continuous = false;
@@ -2140,6 +2171,8 @@ function renderRelay() {
     }
     box.innerHTML = html;
     box.scrollTop = box.scrollHeight;
+    if (rl.round) top.insertAdjacentHTML('beforeend', `<div class="text-right mt-1"><button type="button" onclick="toggleAutoSpeak()" class="text-[11px] font-bold ${autoOn() ? 'text-orange-700' : 'text-gray-400'} underline">${autoOn() ? '🔊 컴퓨터 대사 자동 듣기 켜짐' : '🔈 자동 듣기 꺼짐 (눌러서 켜기)'}</button></div>`);
+    relayAutoSpeak(rl);
 }
 
 /* =====================================================================
