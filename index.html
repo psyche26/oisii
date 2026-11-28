@@ -1455,8 +1455,10 @@ const W_TH = { 1: ['いちせん'], 3: ['さんせん'], 4: ['しせん'], 6: ['
 const W_HU = { 1: ['いちひゃく'], 3: ['さんひゃく'], 4: ['しひゃく'], 6: ['ろくひゃく'], 8: ['はちひゃく'], 9: ['くひゃく'] };
 const W_TE = { 1: ['いちじゅう'], 4: ['しじゅう'], 6: ['ろっじゅう'], 9: ['くじゅう'] };
 const EXTRA_WRONG = ['さんびゃく', 'ろっぴゃく', 'はっぴゃく', 'さんぜん', 'はっせん', 'よひゃく', 'よんぜん', 'ななぜん'];
+const R_MAN = { 1: ['いちまん'] }, W_MAN = { 1: ['まん'] };   // 10,000엔(いちまんえん)까지 읽기
 function priceParts(p) {
-    const th = Math.floor(p / 1000), hu = Math.floor(p % 1000 / 100), te = Math.floor(p % 100 / 10), parts = [];
+    const man = Math.floor(p / 10000), th = Math.floor(p % 10000 / 1000), hu = Math.floor(p % 1000 / 100), te = Math.floor(p % 100 / 10), parts = [];
+    if (man) parts.push({ alts: R_MAN[man] || [], wrong: W_MAN[man] || [] });
     if (th) parts.push({ alts: R_TH[th], wrong: W_TH[th] || [] });
     if (hu) parts.push({ alts: R_HU[hu], wrong: W_HU[hu] || [] });
     if (te) parts.push({ alts: R_TE[te], wrong: W_TE[te] || [] });
@@ -1792,18 +1794,22 @@ function newCard(round) {
         const pool = t < 100 && sold.length >= 2 ? sold : all, [A, B] = shuffle(pool).slice(0, 2), a = rnd(3), b = rnd(3);
         const total = MENU_PRICE[A] * a + MENU_PRICE[B] * b;
         if (total < 100 || total > 4900) continue;
-        const pay = round === 1 ? total : [500, 1000, 2000, 3000, 5000].find(p => p > total);
+        /* 낼 돈: 딱 맞게(20%) · 합계보다 큰 가장 작은 돈(50%) · 더 큰 돈, 만 엔까지(30%) */
+        const bills = [500, 1000, 2000, 5000, 10000].filter(p => p > total), r = Math.random();
+        const pay = r < 0.2 ? total : r < 0.7 || bills.length < 2 ? bills[0] : bills[1 + Math.floor(Math.random() * (bills.length - 1))];
         return { A, B, a, b, n: rnd(4), pay, round };
     }
     return { A: 'udon', B: 'taiyaki', a: 1, b: 1, n: 2, pay: round === 1 ? 590 : 1000, round };
 }
-/* 교과서 수준 7줄 대화 (점원 4줄 · 손님 3줄)
+/* 교과서 5과 흐름 9줄 대화 (점원 5줄 · 손님 4줄)
  *  1 점원 いらっしゃいませ。なんめいさまですか。      2 손님 ○○です。
- *  3 점원 こちらへ どうぞ。なにに しますか。(교과서)      4 손님 Aを ○つと、Bを ○つ ください。(〜にします도 정답)
- *  5 점원 Aを ○つと、Bを ○つですね。                   6 손님 いくらですか。
- *  7 점원 (합계)えんです。ありがとうございます。
- * 1판은 학생 = 손님(2·4·6줄), 2판은 학생 = 점원(1·3·5·7줄, 합계를 직접 계산).
- * alts = 정답으로 인정하는 다른 말투 (조사 を·と 생략, ください/にします, ぜんぶで 붙이기 등) */
+ *  3 점원 こちらへ どうぞ。なにに しますか。          4 손님 Aを ○つと、Bを ○つ ください。(〜にします도 정답)
+ *  5 점원 Aを ○つと、Bを ○つですね。                 (식사 장면: 점원 おまたせしました。 차례 없음)
+ *  6 손님 ごちそうさまでした。いくらですか。(いくらですか만 말해도 정답)
+ *  7 점원 ぜんぶで (합계)えんです。                     8 손님 じゃ、(낼 돈)えんで。
+ *  9 점원 (거스름돈)えんの おかえしです。ありがとうございました。
+ * 1판은 학생 = 손님(2·4·6·8줄, 4번), 2판은 학생 = 점원(1·3·5·7·9줄, 5번 — 합계와 거스름돈을 직접 계산).
+ * alts = 정답으로 인정하는 다른 말투 (조사 を·と 생략, ください/にします, おかえし/おつり 등) */
 function buildRelayLines(card, round, order) {
     const A = menuById(card.A), B = menuById(card.B), a = card.a, b = card.b, pa = MENU_PRICE[card.A], pb = MENU_PRICE[card.B];
     const total = pa * a + pb * b, n = card.n;
@@ -1834,23 +1840,47 @@ function buildRelayLines(card, round, order) {
     L.push({ who: 'clerk', jp: `${A.kana}を ${CNT[a]}と、${B.kana}を ${CNT[b]}ですね。`, kr: `${A.kr} ${a}개와 ${B.kr} ${b}개군요.`,
         alts: combos(CNT[a], CNT[b], ['ですね。']),
         wrong: [w5a, [`${C.kana}を ${CNT[a]}と、${B.kana}を ${CNT[b]}ですね。`, `${C.kana}는 손님이 주문하지 않은 메뉴예요.`]] });
-    L.push({ who: 'customer', jp: 'いくらですか。', kr: '얼마예요?', alts: ['おいくらですか。', 'ぜんぶで いくらですか。'],
-        wrong: [['いくつですか。', 'いくつ는 "몇 개"를 묻는 말이에요. 값을 물을 때는 いくら예요.'], ['なんめいさまですか。', '점원이 손님 수를 물을 때 하는 말이에요.']] });
+    /* 식사 장면 (차례 없음): 컴퓨터 점원이 음식을 가져오고, 식사 중 화면 뒤에 계산대 장면으로 */
+    L.push({ who: 'clerk', jp: 'おまたせしました。', kr: '오래 기다리셨습니다.', scene: 'meal' });
+    L.push({ who: 'customer', jp: 'ごちそうさまでした。いくらですか。', kr: '잘 먹었습니다. 얼마예요?',
+        alts: ['いくらですか。', 'おいくらですか。', 'ごちそうさまでした。おいくらですか。', 'ごちそうさまでした。ぜんぶで いくらですか。', 'ぜんぶで いくらですか。'],
+        wrong: [['ごちそうさまでした。いくつですか。', 'いくつ는 "몇 개"를 묻는 말이에요. 값을 물을 때는 いくら예요.'], ['いただきます。いくらですか。', 'いただきます는 먹기 전에 하는 말이에요. 다 먹고 나서는 ごちそうさまでした.']] });
     const cw = [[pa + pb, '개수를 곱하지 않았어요.'], [pa * a, '한 메뉴만 계산했어요.'], [pb * b, '한 메뉴만 계산했어요.']].filter(([x]) => x !== total && x >= 10);
     const calc = `${yen(pa)}円×${a} + ${yen(pb)}円×${b} = ${yen(total)}円`, tw = [];
     cw.slice(0, 1).forEach(([x, why]) => tw.push([yenRead(x), `합계가 달라요. ${why} ${calc}`]));
     while (tw.length < 2) { const x = altAmounts(total, [])[tw.length]; tw.push([yenRead(x), `합계가 달라요. ${calc}`]); }
     const rt = wrongRead(total);
     if (rt) tw[1] = [rt, `금액은 맞지만 읽는 법이 달라요. ${yen(total)}円은 「${yenRead(total)}」`];
-    const yr = yenRead(total);
-    L.push({ who: 'clerk', jp: `${yr}です。ありがとうございます。`, kr: `${yen(total)}엔입니다. 감사합니다.`, amts: [total],
-        alts: [`ぜんぶで ${yr}です。ありがとうございます。`, `${yr}です。ありがとうございました。`, `ぜんぶで ${yr}です。ありがとうございました。`],
-        wrong: tw.map(([x, why]) => [`${x}です。ありがとうございます。`, why]) });
+    const yr = yenRead(total), pay = card.pay, yp = yenRead(pay), change = pay - total, yc = yenRead(change);
+    L.push({ who: 'clerk', jp: `ぜんぶで ${yr}です。`, kr: `모두 ${yen(total)}엔입니다.`, amts: [total],
+        alts: [`${yr}です。`],
+        wrong: tw.map(([x, why]) => [`ぜんぶで ${x}です。`, why]) });
+    /* 8 손님: 낼 돈 말하기 (교과서: じゃ、〜えんで。) */
+    const exact = change === 0;
+    const otherBill = shuffle([500, 1000, 2000, 5000, 10000].filter(x => x !== pay && x >= total))[0] || (pay < 5000 ? 5000 : 2000);
+    const rp = wrongRead(pay);
+    L.push({ who: 'customer', jp: `じゃ、${yp}で。`, kr: `그럼 ${yen(pay)}엔으로 (낼게요).`, amts: [pay],
+        alts: [`${yp}で。`, `じゃ、${yp}で おねがいします。`, `${yp}で おねがいします。`, `はい、${yp}で。`, `じゃあ、${yp}で。`, `じゃ、ちょうど ${yp}で。`, `ちょうど ${yp}で おねがいします。`],
+        wrong: [[`じゃ、${yenRead(otherBill)}で。`, `낼 돈은 ${yen(pay)}엔이에요. 상황카드를 다시 확인해요.`],
+            rp ? [`じゃ、${rp}で。`, `금액은 맞지만 읽는 법이 달라요. ${yen(pay)}円은 「${yp}」`] : [`ぜんぶで ${yp}です。`, '점원이 값을 알려 줄 때 하는 말이에요. 손님은 「〜で」로 낼 돈을 말해요.']] });
+    /* 9 점원: 거스름돈 (교과서: 〜えんの おかえしです。ありがとうございました。) / 딱 맞게 냈으면 ちょうど いただきます */
+    if (exact) {
+        L.push({ who: 'clerk', jp: 'ちょうど いただきます。ありがとうございました。', kr: '딱 맞게 받았습니다. 감사합니다.', amts: [],
+            alts: ['ちょうど おあずかりします。ありがとうございました。', 'ちょうど いただきます。ありがとうございます。', 'ちょうど おあずかりします。ありがとうございます。', 'ちょうど いただきます。', 'ちょうど おあずかりします。', `${yp} ちょうど いただきます。ありがとうございました。`, `${yp} ちょうど おあずかりします。ありがとうございました。`],
+            wrong: [[`ひゃくえんの おかえしです。ありがとうございました。`, `손님이 딱 맞게 ${yen(pay)}엔을 냈어요. 거스름돈이 없어요.`], ['いただきます。', 'いただきます는 먹기 전에 하는 말이에요. 딱 맞게 받았을 때는 「ちょうど いただきます」.']] });
+    } else {
+        const chw = [[change + 100, '거스름돈 계산이 달라요.'], [change - 100, '거스름돈 계산이 달라요.'], [total, '합계를 다시 말했어요. 거스름돈은 낸 돈 − 합계예요.']].filter(([x]) => x >= 10 && x !== change);
+        const rc = wrongRead(change), cwrong = [[yenRead(chw[0][0]), `${chw[0][1]} ${yen(pay)}円 − ${yen(total)}円 = ${yen(change)}円`],
+            rc ? [rc, `금액은 맞지만 읽는 법이 달라요. ${yen(change)}円은 「${yc}」`] : [yenRead(chw[1][0]), `${chw[1][1]} ${yen(pay)}円 − ${yen(total)}円 = ${yen(change)}円`]];
+        L.push({ who: 'clerk', jp: `${yc}の おかえしです。ありがとうございました。`, kr: `거스름돈 ${yen(change)}엔입니다. 감사합니다.`, amts: [change],
+            alts: [`${yc}の おつりです。ありがとうございました。`, `${yc}の おかえしです。ありがとうございます。`, `${yc}の おつりです。ありがとうございます。`, `${yc}の おかえしです。`, `${yc}の おつりです。`],
+            wrong: cwrong.map(([x, why]) => [`${x}の おかえしです。ありがとうございました。`, why]) });
+    }
     const mine = round === 1 ? 'customer' : 'clerk';
-    let k = 0;
+    let k = 0, no = 0;
     return L.map(l => {
-        const student = l.who === mine;
-        const out = { who: l.who, jp: l.jp, kr: l.kr, student, amts: l.amts || [], alts: l.alts || [] };
+        const student = l.who === mine && !l.scene;
+        const out = { who: l.who, jp: l.jp, kr: l.kr, student, amts: l.amts || [], alts: l.alts || [], scene: l.scene || '', no: l.scene ? 0 : ++no };
         if (student) {
             out.by = order[k++ % order.length];
             out.opts = shuffle([{ t: l.jp, ok: true, why: '' }, ...l.wrong.map(([t, why]) => ({ t, ok: false, why }))]);
@@ -1871,7 +1901,7 @@ function startRound(r) {
     const g = myGroup(), rl = g.relay;
     if (r === 2 && !rl.rounds[0]) return;
     const turns = n => r === 2 ? (rl.lines || []).filter(l => l.student && l.by === n).length : 0;   // 1판에서 적게 말한 조원이 2판에서 먼저
-    const names = shuffle(relayMembers(g)).sort((x, y) => turns(x) - turns(y)), order = [0, 1, 2, 3].map(i => names[i % names.length]);
+    const names = shuffle(relayMembers(g)).sort((x, y) => turns(x) - turns(y)), order = [0, 1, 2, 3, 4].map(i => names[i % names.length]);   // 1판 4번, 2판 5번
     rl.round = r; rl.order = order; rl.card = newCard(r); rl.lines = buildRelayLines(rl.card, r, order);
     rl.cursor = 0; rl.phase = 'announce'; rl.msg = ''; rl.hint = false; ui.free = null; rl.rounds[r - 1] = false;
     save(); renderRelay();
@@ -1881,7 +1911,7 @@ function answerRelay(oi) {
     const rl = myGroup().relay; if (rl.phase !== 'choose') return;
     const o = rl.lines[rl.cursor].opts[oi]; if (!o) return;
     if (o.ok) { rl.phase = 'speak'; rl.msg = ''; rl.fb = { tries: 0, best: 0, passed: false }; ui.recMsg = ''; ui.free = null; logEvent('speak_try', { mode: 'hint', i: rl.cursor, pick: 'correct' }, 'step3'); }
-    else { rl.msg = '⚠️ ' + o.why; logEvent('speak_try', { mode: 'hint', i: rl.cursor, pick: 'wrong', t: o.t }, 'step3'); }
+    else { rl.msg = '⚠️ ' + o.why; sfx('no'); logEvent('speak_try', { mode: 'hint', i: rl.cursor, pick: 'wrong', t: o.t }, 'step3'); }
     save(); renderRelay();
 }
 function confirmSpoken() {
@@ -1925,11 +1955,29 @@ function relayAutoSpeak(rl) {
         const target = (next || prev || {}).by;
         if (!ONLINE || !target || target === state.user.name) toSay.push(l.jp);
     }
-    if (toSay.length && autoOn() && !ui.rec) setTimeout(() => toSay.forEach(t => speakJa(t, true)), 350);   // 말풍선이 뜬 뒤 읽기
+    if (toSay.length && !ui.rec) setTimeout(() => toSay.forEach(t => speakJa(t, true)), 350);   // 말풍선이 뜬 뒤 읽기
+}
+/* ---- 효과음: 정답 "딩동", 오답 "통" (소리 파일 없이 앱이 직접 만듦). 답한 학생의 기기에서만 난다 ---- */
+let SFX_AC = null;
+function sfx(kind) {
+    try {
+        SFX_AC ||= new (window.AudioContext || window.webkitAudioContext)();
+        if (SFX_AC.state === 'suspended') SFX_AC.resume();
+        const t = SFX_AC.currentTime;
+        const tone = (freq, start, dur, type, vol) => {
+            const o = SFX_AC.createOscillator(), g = SFX_AC.createGain();
+            o.type = type; o.frequency.value = freq;
+            g.gain.setValueAtTime(0.0001, t + start); g.gain.linearRampToValueAtTime(vol, t + start + 0.01); g.gain.exponentialRampToValueAtTime(0.0001, t + start + dur);
+            o.connect(g); g.connect(SFX_AC.destination); o.start(t + start); o.stop(t + start + dur + 0.05);
+        };
+        if (kind === 'ok') { tone(1318.5, 0, 0.35, 'sine', 0.22); tone(1046.5, 0.17, 0.55, 'sine', 0.22); }   // 딩-동
+        else tone(185, 0, 0.2, 'triangle', 0.3);                                                                  // 통 (부드러운 낮은 소리)
+    } catch (e) { }
 }
 /* 아이패드 등은 첫 소리를 "화면을 누를 때"만 허락하므로, 첫 터치 때 소리 없는 문장으로 잠금을 풀어 둔다 */
 document.addEventListener('pointerdown', function unlockTTS() {
     try { const u = new SpeechSynthesisUtterance(' '); u.volume = 0; speechSynthesis.speak(u); } catch (e) { }
+    try { SFX_AC ||= new (window.AudioContext || window.webkitAudioContext)(); SFX_AC.resume(); } catch (e) { }
     document.removeEventListener('pointerdown', unlockTTS);
 }, { once: true });
 /* ---- 3단계 발화 피드백: 음성 인식(Web Speech)이 들은 말을 정답 문장과 비교해 고칠 곳을 알려 준다 ----
@@ -1945,7 +1993,7 @@ const JA_ALIAS = [
     ['一人', 'ひとり'], ['二人', 'ふたり'], ['三人', 'さんにん'], ['四人', 'よにん'], ['一つ', 'ひとつ'], ['二つ', 'ふたつ'], ['三つ', 'みっつ'], ['四つ', 'よっつ'],
     ['何名様', 'なんめいさま'], ['何名', 'なんめい'], ['名様', 'めいさま'], ['様', 'さま'], ['御注文', 'ごちゅうもん'], ['ご注文', 'ごちゅうもん'], ['注文', 'ちゅうもん'], ['全部', 'ぜんぶ'],
     ['預かり', 'あずかり'], ['預', 'あず'], ['お釣り', 'おつり'], ['釣り', 'つり'], ['丁度', 'ちょうど'], ['願い', 'ねがい'], ['下さい', 'ください'], ['頂きます', 'いただきます'],
-    ['ご馳走様', 'ごちそうさま'], ['お決まり', 'おきまり'], ['決まり', 'きまり'], ['何に', 'なにに'], ['何が', 'なにが'], ['何', 'なに'], ['御馳走様', 'ごちそうさま'], ['ご馳走', 'ごちそう'], ['御馳走', 'ごちそう'], ['馳走', 'ちそう'], ['有難う', 'ありがとう'], ['此方', 'こちら'], ['円', 'えん'], ['宜しく', 'よろしく'],
+    ['ご馳走様', 'ごちそうさま'], ['お決まり', 'おきまり'], ['お返し', 'おかえし'], ['返し', 'かえし'], ['お釣', 'おつり'], ['決まり', 'きまり'], ['何に', 'なにに'], ['何が', 'なにが'], ['何', 'なに'], ['御馳走様', 'ごちそうさま'], ['ご馳走', 'ごちそう'], ['御馳走', 'ごちそう'], ['馳走', 'ちそう'], ['有難う', 'ありがとう'], ['此方', 'こちら'], ['円', 'えん'], ['宜しく', 'よろしく'],
     ['寿司', 'すし'], ['鮨', 'すし'], ['味噌', 'みそ'], ['豚骨', 'とんこつ'], ['牛', 'ぎゅう'], ['豚', 'とん'], ['丼', 'どん'], ['焼き', 'やき'], ['焼', 'やき'], ['蛸', 'たこ'], ['握り', 'にぎり'],
     ['刺身', 'さしみ'], ['蕎麦', 'そば'], ['天', 'てん'], ['親子', 'おやこ'], ['海鮮', 'かいせん'], ['かき氷', 'かきごおり'], ['饂飩', 'うどん'], ['抹茶', 'まっちゃ'], ['お茶', 'おちゃ'], ['茶', 'ちゃ'],
     ['漬け', 'づけ'], ['好み', 'このみ'], ['鳥', 'とり'], ['肉', 'にく'], ['鯛', 'たい'], ['団子', 'だんご'], ['長崎', 'ながさき'], ['唐揚げ', 'からあげ'], ['唐揚', 'からあげ'], ['揚げ', 'あげ'],
@@ -1953,14 +2001,15 @@ const JA_ALIAS = [
 ].sort((a, b) => b[0].length - a[0].length);
 function jaKanjiNum(k) {
     const d = { '〇': 0, '一': 1, '二': 2, '三': 3, '四': 4, '五': 5, '六': 6, '七': 7, '八': 8, '九': 9 }, u = { '十': 10, '百': 100, '千': 1000 };
-    let tot = 0, cur = 0; for (const c of k) { if (c in d) cur = d[c]; else if (c in u) { tot += (cur || 1) * u[c]; cur = 0; } } return tot + cur;
+    let tot = 0, cur = 0; for (const c of k) { if (c in d) cur = d[c]; else if (c === '万') { tot = ((tot + cur) || 1) * 10000; cur = 0; } else if (c in u) { tot += (cur || 1) * u[c]; cur = 0; } } return tot + cur;
 }
-const jaYen = n => (n >= 10 && n <= 9999) ? yenRead(n) : null;
+const jaYen = n => (n >= 10 && n <= 19999) ? yenRead(n) : null;
 function jaHeard(t) {                                   // 인식된 글 → 비교용 글자 배열
     t = String(t || '').normalize('NFKC');
+    t = t.replace(/(\d+)\s*万\s*(\d{0,4})/g, (m, a, b) => String(+a * 10000 + (b ? +b : 0)));   // 1万円 → 10000円
     t = t.replace(/(\d+)\s*[人名]/g, (m, n) => NIN[+n] || m).replace(/(\d+)\s*つ/g, (m, n) => CNT[+n] || m);
     t = t.replace(/(\d[\d,]*)\s*円/g, (m, n) => jaYen(+n.replace(/,/g, '')) || m);
-    t = t.replace(/([一二三四五六七八九〇十百千]+)\s*円/g, (m, k) => jaYen(jaKanjiNum(k)) || m);
+    t = t.replace(/([一二三四五六七八九〇十百千万]+)\s*円/g, (m, k) => jaYen(jaKanjiNum(k)) || m);
     t = t.replace(/\d[\d,]*/g, m => { const y = jaYen(+m.replace(/,/g, '')); return y ? y.replace(/えん$/, '') : m; });
     JA_ALIAS.forEach(([k, v]) => { t = t.split(k).join(v); });
     return [...t].filter(c => !JA_DELIM.test(c)).map(jaCh);
@@ -1977,10 +2026,17 @@ function jaAlign(t, h) {                                // 정답 글자 중 제
     while (i < n && j < m) { if (t[i] === h[j]) { ok[i] = true; i++; j++; } else if (dp[i + 1][j] >= dp[i][j + 1]) i++; else j++; }
     return { ok, hit: dp[0][0] };
 }
-function jaWrongAmt(l, hs, ok) {                        // 금액을 틀리게 읽은 말(예: いちせん)이 섞여 들렸으면 그 금액 글자를 '틀림'으로 표시
+const JA_NUMRE = (() => {   // 금액 읽기 덩어리(せん·ひゃく·じゅう 등)가 이어진 뒤 えん 으로 끝나는 부분
+    const w = [...new Set([R_MAN, W_MAN, R_TH, R_HU, R_TE, W_TH, W_HU, W_TE].flatMap(o => Object.values(o).flat()).concat(EXTRA_WRONG, ['いち', 'に', 'さん', 'よん', 'ご', 'ろく', 'なな', 'はち', 'きゅう', 'じゅう', 'ひゃく', 'せん']))].sort((a, b) => b.length - a.length);
+    return new RegExp('(?:' + w.join('|') + ')+えん', 'g');
+})();
+function jaWrongAmt(l, hs, ok) {                        // 들린 말 속 금액이 정답 금액과 다르면(틀린 읽기·다른 금액) 그 금액 글자를 '틀림'으로 표시
     const s = jaTarget(l.jp).chars.join('');
     (l.amts || []).forEach(n => {
-        if (!jaYen(n) || !priceParts(n).flatMap(p => p.wrong).some(w => hs.includes(w))) return;
+        if (!jaYen(n)) return;
+        const runs = hs.match(JA_NUMRE) || [], acc = priceAccepted(n);
+        const misread = priceParts(n).flatMap(p => p.wrong).some(w => hs.includes(w) && !acc.some(x => x.includes(w) && hs.includes(x)));   // (いちまん 속의 まん 처럼 정답 안에 든 말은 제외)
+        if (!misread && !(runs.length && !runs.some(r => acc.includes(r)))) return;
         const r = jaTarget(yenRead(n)).chars.join(''), i = s.indexOf(r);
         if (i >= 0) for (let k = i; k < i + r.length; k++) ok[k] = false;
     });
@@ -1991,7 +2047,7 @@ function jaScore(line, alts) {                          // 인식 후보 여러 
     (alts && alts.length ? alts : ['']).forEach(a => {
         const h = jaHeard(a), al = jaAlign(tg.chars, h), m = h.length;
         jaWrongAmt(L, h.join(''), al.ok); al.hit = al.ok.filter(Boolean).length;
-        let sc = n ? al.hit / n : 0; if (m > n * 1.3) sc *= (n * 1.3) / m;
+        let sc = n ? (2 * al.hit) / (n + m) : 0;   // 정답 글자를 얼마나 말했는지 + 군더더기를 얼마나 덧붙였는지 함께 봄 (예: にじゅう 대신 ひゃくにじゅう 는 감점)
         if (!best || sc > best.score) best = { score: sc, heard: a, ok: al.ok, target };
     }); });
     return best;
@@ -2028,6 +2084,8 @@ const JA_TIPS = [
     [/ありがとう/, '「ございました」까지 서두르지 말고 또렷하게 말해요.'],
     [/ごちそうさま/, '「そう」를 「そー」처럼 길게 말해요.'],
     [/なさいますか|しますか/, '「なにに」에서 살짝 끊고, 「なさいますか」는 끝을 올려 물어봐요.'],
+    [/おかえし|おつり/, '「おかえし」의 「え」를 또렷하게, 금액 → 「の」 → 「おかえしです」를 이어서 말해요.'],
+    [/^じゃ/, '「じゃ」는 「그럼」이에요. 가볍게 말하고 낼 돈을 또렷하게 말해요.'],
     [/いくら/, '「いくら」는 값을 물을 때, 「いくつ」는 개수를 물을 때예요. 끝을 올려 물어봐요.'],
     [/ですね/, '「ですね」는 확인하는 말이라 끝을 부드럽게 내려요.'],
     [/どうぞ|こちら/, '「どうぞ」는 「どー」를 길게, 「こちらへ」의 「へ」는 「에」로 읽어요.']
@@ -2063,7 +2121,7 @@ function relayHeard(l, alts) {
     const rl = myGroup().relay, fb = rl.fb || (rl.fb = { tries: 0, best: 0, passed: false }), r = jaScore(l, alts);
     fb.tries++; fb.heard = r.heard; fb.score = r.score; fb.ok = r.ok; fb.target = r.target; fb.best = Math.max(fb.best || 0, r.score);
     fb.keyMiss = jaKeyMiss({ jp: r.target, amts: l.amts }, r.ok).length;
-    if (r.score >= JA_PASS && !fb.keyMiss) fb.passed = true;
+    if (r.score >= JA_PASS && !fb.keyMiss) { if (!fb.passed) setTimeout(() => sfx('ok'), 150); fb.passed = true; }
     ui.recMsg = ''; save();
 }
 /* ---- 보기 없이 먼저 말해 보기 (자유 발화) ----
@@ -2089,9 +2147,10 @@ function relayFree(l, alts) {
     if (kind === 'correct') {
         rl.phase = 'speak'; rl.msg = '';
         rl.fb = { tries: 1, best: right.r.score, score: right.r.score, heard: right.r.heard, ok: right.r.ok, target: right.r.target, keyMiss: 0, passed: true, free: !rl.hint };
-        f.msg = ''; save(); return;
+        f.msg = ''; save(); setTimeout(() => sfx('ok'), 150); return;
     }
     f.kind = kind;
+    if (kind === 'wrong') setTimeout(() => sfx('no'), 150);
     f.msg = kind === 'wrong' ? '⚠️ ' + wrong.o.why
         : kind === 'near' ? (keyMiss ? '👍 거의 맞았어요! 사람 수·개수·금액을 상황카드에서 다시 확인하고 말해 봐요.' : '👍 거의 맞았어요! 조금 더 또렷하게, 문장 끝까지 말해 봐요.')
         : '🤔 잘 알아듣지 못했어요. 천천히 다시 말하거나 💡 힌트를 보세요.';
@@ -2120,9 +2179,21 @@ function relaySpeakHTML(rl, l, who) {
 }
 function relayCardHTML(card) {
     const A = menuById(card.A), B = menuById(card.B), row = (m, q) => `<div class="flex items-center gap-2 bg-white rounded-xl border border-amber-200 px-2 py-1">${picHTML(m.id, m.icon, 'w-9 h-9', 'text-2xl')}<span class="jp-font text-sm font-black">${esc(m.kana)}</span><span class="text-[11px] text-gray-500">${esc(m.kr)}</span><span class="ml-auto text-xs font-black text-orange-700">${yen(MENU_PRICE[m.id])}円 × ${q}</span></div>`;
-    return `<div class="bg-amber-50 border-2 border-amber-300 rounded-2xl p-3 space-y-1.5"><p class="text-xs font-black text-amber-900">🃏 상황카드 <span class="font-medium text-amber-800">· 손님 ${card.n}명 (${NIN[card.n]})${card.round === 2 ? ' · 합계는 점원(우리)이 계산해요' : ''}</span></p>${row(A, card.a)}${row(B, card.b)}</div>`;
+    return `<div class="bg-amber-50 border-2 border-amber-300 rounded-2xl p-3 space-y-1.5"><p class="text-xs font-black text-amber-900">🃏 상황카드 <span class="font-medium text-amber-800">· 손님 ${card.n}명 (${NIN[card.n]}) · 낼 돈 <b>${yen(card.pay)}円</b>${card.pay === MENU_PRICE[card.A] * card.a + MENU_PRICE[card.B] * card.b ? ' (딱 맞게)' : ''}${card.round === 2 ? ' · 합계와 거스름돈은 점원(우리)이 계산해요' : ''}</span></p>${row(A, card.a)}${row(B, card.b)}</div>`;
+}
+function mealHTML(l, rl) {   // 식사 장면: おまたせしました + 주문한 음식 + 식사 중 → 계산대로
+    const c = rl.card || {}, A = menuById(c.A), B = menuById(c.B), eating = Date.now() < (ui.eatingUntil || 0);
+    const food = [[A, c.a], [B, c.b]].filter(([m]) => m).map(([m, q]) => Array.from({ length: q || 1 }, () => picHTML(m.id, m.icon, 'w-12 h-12', 'text-4xl')).join('')).join('');
+    return `<div class="flex justify-start"><div class="max-w-[88%] rounded-2xl px-3 py-2 bg-white border border-gray-200">
+        <p class="text-[10px] font-black text-gray-500">🧑‍🍳 店員 · 컴퓨터</p>
+        <p class="jp-font text-sm font-black text-gray-900 leading-snug">${esc(l.jp)} <button type="button" onclick="speakJa(${esc(JSON.stringify(l.jp))})" class="ml-1 text-xs">🔊</button></p><p class="text-[11px] text-gray-500 mt-0.5">${esc(l.kr)}</p></div></div>
+      <div class="rounded-3xl border-2 border-amber-200 bg-amber-50 p-3 text-center">
+        <div class="flex flex-wrap justify-center gap-1 ${eating ? 'animate-bounce' : ''}">${food}</div>
+        <p class="text-sm font-black text-amber-900 mt-1">${eating ? '😋 냠냠… 식사 중' : '😋 맛있게 먹었어요!'}</p></div>
+      <div class="flex items-center gap-2 text-xs font-black text-orange-700"><span class="flex-1 border-t-2 border-dashed border-orange-200"></span>💴 계산대에서<span class="flex-1 border-t-2 border-dashed border-orange-200"></span></div>`;
 }
 function relayBubble(l, round, idx, revealKr) {
+    if (l.scene === 'meal') return mealHTML(l, myGroup().relay);
     const clerk = l.who === 'clerk';
     const kr = round === 1 || revealKr ? `<p class="text-[11px] text-gray-500 mt-0.5">${esc(l.kr)}</p>` : `<details class="mt-0.5"><summary class="text-[11px] text-gray-400 cursor-pointer">뜻 보기</summary><p class="text-[11px] text-gray-500">${esc(l.kr)}</p></details>`;
     return `<div class="flex ${clerk ? 'justify-start' : 'justify-end'}"><div class="max-w-[88%] rounded-2xl px-3 py-2 ${clerk ? 'bg-white border border-gray-200' : 'bg-orange-100 border border-orange-300'}">
@@ -2138,7 +2209,7 @@ function renderRelay() {
     if (rl.round === 0) {
         html = `<div class="bg-white border-2 border-orange-300 rounded-3xl p-5 space-y-3 text-center">
             <p class="text-base font-black text-orange-950">🗣️ 가게에서 주문하기 릴레이</p>
-            <p class="text-xs sm:text-sm text-gray-600 leading-relaxed text-left">• 대화는 いらっしゃいませ 부터 값 계산까지 7줄이에요.<br>• <b>1판</b>은 우리가 <b>손님</b>, <b>2판</b>은 우리가 <b>점원</b>! 나머지 말은 컴퓨터가 해요.<br>• 순서는 <b>랜덤</b>으로 뽑아요. 차례가 되면 먼저 <b>🎤 일본어로 말해 보고</b>, 모르겠으면 <b>💡 힌트</b>로 보기 3개 중에서 골라요.<br>• 주문할 때는 「〜ください」도 「〜にします」도 좋고, を·と 를 빼고 말해도 정답이에요.<br>• 상황카드(인원·메뉴·개수)는 판마다 달라요. 2판에서 점원이 되면 <b>합계를 직접 계산</b>해서 말해요!</p>
+            <p class="text-xs sm:text-sm text-gray-600 leading-relaxed text-left">• 대화는 いらっしゃいませ 부터 거스름돈까지 9줄이에요. 주문한 뒤에는 <b>식사 장면</b>이 나오고, 다 먹으면 <b>계산대</b>로 가요.<br>• <b>1판</b>은 우리가 <b>손님</b>(4번), <b>2판</b>은 우리가 <b>점원</b>(5번)! 나머지 말은 컴퓨터가 해요.<br>• 순서는 <b>랜덤</b>으로 뽑아요. 차례가 되면 먼저 <b>🎤 일본어로 말해 보고</b>, 모르겠으면 <b>💡 힌트</b>로 보기 3개 중에서 골라요.<br>• 주문할 때는 「〜ください」도 「〜にします」도 좋고, を·と 를 빼고 말해도 정답이에요.<br>• 상황카드(인원·메뉴·개수·낼 돈)는 판마다 달라요. 2판에서 점원이 되면 <b>합계와 거스름돈을 직접 계산</b>해서 말해요!</p>
             <button onclick="startRound(1)" class="w-full py-3.5 rounded-2xl bg-orange-600 text-white font-black text-sm shadow">🎲 1판 시작: 순서 뽑기</button></div>`;
     } else {
         const role = rl.round === 1 ? '손님 🙋 (점원 말은 컴퓨터)' : '점원 🧑‍🍳 (손님 말은 컴퓨터)';
@@ -2151,13 +2222,20 @@ function renderRelay() {
         html += relayCardHTML(rl.card);
         if (rl.phase === 'announce') {
             html += `<div class="bg-white border-2 border-orange-400 rounded-3xl p-4 text-center space-y-2"><p class="text-sm font-black text-orange-950">🎉 이번 판 순서를 발표해요!</p>
-                ${rl.lines.filter(l => l.student).map((l, i) => `<p class="text-sm font-bold">${i + 1}번째 · <span class="text-orange-600 font-black">${esc(l.by)}</span> <span class="text-xs text-gray-500">(${l.who === 'customer' ? '손님' : '점원'} ${rl.lines.indexOf(l) + 1}번째 대사)</span></p>`).join('')}
+                ${rl.lines.filter(l => l.student).map((l, i) => `<p class="text-sm font-bold">${i + 1}번째 · <span class="text-orange-600 font-black">${esc(l.by)}</span> <span class="text-xs text-gray-500">(${l.who === 'customer' ? '손님' : '점원'} ${l.no}번째 대사)</span></p>`).join('')}
                 <button onclick="beginTalk()" class="mt-1 w-full py-3 rounded-2xl bg-orange-600 text-white font-black text-sm">▶ 대화 시작</button></div>`;
         } else {
             if (rl.round === 2 && rl.cursor === 0 && rl.phase === 'choose') html += '<p class="text-center text-xs font-bold text-gray-500">🚪 손님이 가게에 들어왔어요. 점원이 되어 맞이해 봐요!</p>';
+            const mealIdx = rl.lines.findIndex(x => x.scene === 'meal'), mealKey = `${rl.round}:${(rl.card && rl.card.A) || ''}:${(rl.card && rl.card.B) || ''}`;
+            if (mealIdx >= 0 && revealed > mealIdx && ui.mealKey !== mealKey) {          // 식사 장면이 처음 나타난 순간: 4초 동안 식사 중
+                ui.mealKey = mealKey;
+                if (ui.said) { ui.eatingUntil = Date.now() + 4000; setTimeout(renderRelay, 4100); }
+            }
             for (let i = 0; i < revealed; i++) html += relayBubble(rl.lines[i], rl.round, i, false);
             const l = rl.lines[rl.cursor];
-            if (rl.phase === 'choose') {
+            if (rl.phase === 'choose' && Date.now() < (ui.eatingUntil || 0)) {
+                html += '<div class="bg-white border-2 border-dashed border-amber-300 rounded-3xl p-4 text-center text-sm font-black text-amber-800">🍽️ 식사 중… 잠시 후 계산대로 가요</div>';
+            } else if (rl.phase === 'choose') {
                 const me = state.user.name === l.by, f = (ui.free && ui.free.key === rl.round + ':' + rl.cursor) ? ui.free : {}, listening = ui.recState === 'listening', showOpts = rl.hint || !JA_SR;
                 const who = l.who === 'customer' ? '손님' : '점원';
                 html += `<div class="bg-white border-2 border-orange-400 rounded-3xl p-4 shadow-md space-y-2"><p class="text-xs sm:text-sm font-black text-orange-950">🎯 ${esc(l.by)} 님 차례 ${me ? '(나!)' : '(화면을 넘겨 주세요)'} — ${who}이 할 말을 ${JA_SR ? '<u>일본어로 말해</u> 보세요' : '골라요'}</p>
@@ -2180,7 +2258,7 @@ function renderRelay() {
     }
     box.innerHTML = html;
     box.scrollTop = box.scrollHeight;
-    if (rl.round) top.insertAdjacentHTML('beforeend', `<div class="text-right mt-1"><button type="button" onclick="toggleAutoSpeak()" class="text-[11px] font-bold ${autoOn() ? 'text-orange-700' : 'text-gray-400'} underline">${autoOn() ? '🔊 컴퓨터 대사 자동 듣기 켜짐' : '🔈 자동 듣기 꺼짐 (눌러서 켜기)'}</button></div>`);
+    if (false) top.insertAdjacentHTML('beforeend', `<div class="text-right mt-1"><button type="button" onclick="toggleAutoSpeak()" class="text-[11px] font-bold ${autoOn() ? 'text-orange-700' : 'text-gray-400'} underline">${autoOn() ? '🔊 컴퓨터 대사 자동 듣기 켜짐' : '🔈 자동 듣기 꺼짐 (눌러서 켜기)'}</button></div>`);
     relayAutoSpeak(rl);
 }
 
