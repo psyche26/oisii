@@ -25,12 +25,13 @@
     <label class="text-xs font-bold">반(cohort)</label>
     <input id="cohort" value="main" class="border rounded-lg px-2 py-1 text-sm w-24" onchange="refreshAll()">
     <button data-t="prog" class="tab">진행 현황</button><button data-t="speak" class="tab">3단계 발화 기록</button>
-    <button data-t="roster" class="tab">명단 관리</button><button data-t="export" class="tab">내보내기</button>
+    <button data-t="practice" class="tab">연습실 기록</button><button data-t="roster" class="tab">명단 관리</button><button data-t="export" class="tab">내보내기</button>
     <button onclick="refreshAll()" class="ml-auto text-xs underline">🔄 새로고침</button>
     <button onclick="doLogout()" class="text-xs underline text-gray-500">로그아웃</button>
   </div>
   <div id="v-prog" class="view bg-white rounded-2xl p-3 shadow overflow-x-auto"></div>
   <div id="v-speak" class="view hidden bg-white rounded-2xl p-3 shadow overflow-x-auto"></div>
+  <div id="v-practice" class="view hidden bg-white rounded-2xl p-3 shadow overflow-x-auto"></div>
   <div id="v-roster" class="view hidden bg-white rounded-2xl p-4 shadow space-y-2">
     <p class="text-sm font-bold">명단 붙여넣기 (한 줄에 한 명: <code>조번호,이름,학번(선택),PIN(선택)</code>) — 엑셀에서 복사해 붙여도 됩니다</p>
     <textarea id="rosterTxt" rows="8" class="w-full border rounded-xl p-2 text-sm font-mono" placeholder="1,김가,20101&#10;1,이나,20102,1234&#10;2,박다"></textarea>
@@ -71,7 +72,7 @@ function show(){document.querySelectorAll('.view').forEach(v=>v.classList.add('h
 async function refreshAll(){
   const c=coh();
   [{data:G},{data:M},{data:R}]=await Promise.all([sb.from('groups').select('code,data,version,updated_at').eq('cohort',c),sb.from('members').select('name,group_code,last_seen').eq('cohort',c),sb.from('roster').select('*').eq('cohort',c).order('group_code').order('name')]).then(a=>a.map(x=>({data:x.data||[]})));
-  show(); renderProg(); renderSpeak(); renderRoster();
+  show(); renderProg(); renderSpeak(); renderRoster(); renderPractice();
 }
 const ago=t=>{if(!t)return'-';const s=(Date.now()-new Date(t))/1000;return s<90?'방금':s<3600?Math.round(s/60)+'분 전':s<86400?Math.round(s/3600)+'시간 전':Math.round(s/86400)+'일 전';};
 const sortG=a=>[...a].sort((x,y)=>String(x.code).localeCompare(String(y.code),undefined,{numeric:true}));
@@ -90,6 +91,18 @@ function renderProg(){
     return `<tr><td><b>${esc(g.code)}조</b></td><td>${ms.length}/${mm.length}명 접속</td><td>${ago(last)}</td><td>${s.cards}/${mm.length||4}</td><td>${s.food}</td><td>${s.sign}/4</td><td>${s.rounds}/2</td><td>${s.cases}/4 · ${s.prin}/4</td><td>${s.planFill}/10</td><td>${ago(g.updated_at)}</td></tr>`;}).join('');
   $('v-prog').innerHTML=`<table class="w-full"><tr><th>조</th><th>접속</th><th>마지막 접속</th><th>1단계 도감</th><th>우리 메뉴</th><th>2단계 입간판</th><th>3단계 회화</th><th>4단계 의견·원칙</th><th>5단계 홍보지</th><th>마지막 저장</th></tr>${rows||'<tr><td colspan=10>아직 입장한 조가 없어요.</td></tr>'}</table>
   <p class="text-[11px] text-gray-500 mt-2">※ 표시는 조별 저장 데이터 기준입니다. (투표·방명록 등 반 전체 활동은 다음 단계에서 추가)</p>`;
+}
+async function renderPractice(){   // 연습실(준비 운동) 기록: 학생별 개수 세기 완료, 가격 말하기 점수
+  const {data,error}=await sb.from('events').select('group_code,student,payload,ts').eq('cohort',coh()).eq('type','practice').order('ts').limit(5000);
+  if(error){$('v-practice').innerHTML='<p class="text-xs text-red-600">불러오지 못했어요: '+esc(error.message)+'</p>';return;}
+  const by={};
+  (data||[]).forEach(e=>{const p=e.payload||{},k=e.group_code+'|'+e.student;const o=(by[k]??={group:e.group_code,student:e.student,prac:0,cq:[],rounds:0,best:null,scores:[],tries:0,ok:0,last:null});
+    o.last=e.ts; if(p.corner==='count'&&p.practice)o.prac++; if(p.corner==='count'&&p.done&&p.listen!=null)o.cq.push(p);
+    if(p.corner==='price'&&p.done&&!p.retry){o.rounds++;o.scores.push(p.score);o.best=Math.max(o.best??0,p.score);}
+    if(p.corner==='price'&&!p.done){o.tries++;o.ok+=p.ok?1:0;}});
+  const rows=Object.values(by).sort((a,b)=>String(a.group).localeCompare(String(b.group),undefined,{numeric:true})||a.student.localeCompare(b.student));
+  $('v-practice').innerHTML=`<table class="w-full"><tr><th>조</th><th>학생</th><th>개수 연습 (10개까지)</th><th>개수 퀴즈 횟수</th><th>개수 퀴즈 첫 회<br>듣기·말하기</th><th>개수 퀴즈 최고</th><th>가격 말하기 판 수</th><th>첫 판 점수</th><th>최고 점수</th><th>가격 발화 정답률</th><th>마지막 연습</th></tr>${rows.map(o=>`<tr><td>${esc(o.group)}조</td><td>${esc(o.student)}</td><td>${o.prac}회</td><td>${o.cq.length}회</td><td>${o.cq.length?o.cq[0].listen+'/5 · '+o.cq[0].speak+'/5':'-'}</td><td>${o.cq.length?Math.max(...o.cq.map(q=>q.score))+'/10':'-'}</td><td>${o.rounds}판</td><td>${o.scores.length?o.scores[0]+'/10':'-'}</td><td>${o.best??'-'}${o.best!=null?'/10':''}</td><td>${o.tries?Math.round(o.ok/o.tries*100)+'% ('+o.ok+'/'+o.tries+')':'-'}</td><td>${ago(o.last)}</td></tr>`).join('')||'<tr><td colspan=11>아직 연습 기록이 없어요.</td></tr>'}</table>
+  <p class="text-[11px] text-gray-500 mt-2">※ 개수 퀴즈는 듣고 옮기기 5문제 + 보고 말하기 5문제예요(말하기는 한 번에 맞혀야 점수). 첫 회와 최고 점수를 비교하면 연습으로 얼마나 늘었는지 볼 수 있어요. (틀린 문제 다시 풀기는 점수에 넣지 않아요)</p>`;
 }
 function speakRows(){
   return sortG(G).flatMap(g=>((g.data||{}).relay||{}).log?.map(e=>({group:g.code,round:e.r,idx:e.i,by:e.by,jp:e.jp,tries:e.tries,best:e.best,via:e.via,no_hint:e.hint===false?'Y':(e.hint?'N':''),t:e.t}))||[]);

@@ -2724,7 +2724,9 @@ const prMicBtn = (label, fn) => JA_SR
     ? `<button type="button" onclick="${fn}" class="w-full py-3.5 rounded-2xl font-black text-sm shadow ${ui.prRec ? 'bg-red-600 text-white animate-pulse' : 'bg-emerald-700 text-white'}">${ui.prRec ? '🔴 듣는 중… 말하고 나서 눌러도 멈춰요' : label}</button>`
     : '<p class="text-xs text-gray-600 text-center">이 기기는 음성 인식이 안 돼요. 🔊로 듣고 소리 내어 따라 말해 보세요. (아이폰은 Safari로 열고 Siri를 켜 주세요)</p>';
 
-/* ---- ① 다코야키 개수 세기 ---- */
+/* ---- ① 다코야키 개수 세기 ----
+   연습(채점 없음): 누르거나 끌어서 옮기면 앱이 ひとつ·ふたつ… 하고 읽어 줌 → 따라 말하기
+   퀴즈 10문제: 앞 5문제 듣고 옮기기(가) + 뒤 5문제 보고 말하기(나, 접시에서 더하고 빼며 바뀜) */
 function prCountWords(t) {                       // 들린 말 → 개수 말(히라가나)로 바꿔 어떤 개수가 들렸는지 찾기
     t = kata2hira(String(t || '').normalize('NFKC'));
     t = t.replace(/(\d+)\s*(つ|個|こ)/g, (m, n) => CNT10[+n] || m).replace(/([一二三四五六七八九])\s*(つ|個)/g, (m, k) => CNT10[KANJI_D[k]] || m)
@@ -2732,82 +2734,166 @@ function prCountWords(t) {                       // 들린 말 → 개수 말(�
     const found = []; CNT10.forEach((w, i) => { if (i && t.includes(w)) found.push(i); });
     return { t, found };
 }
-function prCountHeard(alts) {
-    const c = ui.prCount || (ui.prCount = { n: 0, tries: 0 }), want = c.n + 1;
-    if (!c.pend) return;
-    let best = null;
-    for (const a of alts) { const r = prCountWords(a); if (r.found.includes(want)) { best = { ok: true, heard: a }; break; } if (!best) best = { ok: false, heard: a, r }; }
-    c.tries++;
-    if (best.ok) {
-        c.n = want; c.pend = false; c.msg = ''; c.kind = 'ok'; sfx('ok');
-        logEvent('practice', { corner: 'count', n: want, ok: true, heard: best.heard }, 'practice');
-        if (want === 10) logEvent('practice', { corner: 'count', done: true, tries: c.tries }, 'practice');
-    } else {
-        const other = best.r.found.find(k => k !== want), plain = /いち|に|さん|よん|し|ご|ろく|なな|しち|はち|きゅう|じゅう|\d/.test(best.r.t);
-        c.kind = other ? 'wrong' : 'none';
-        c.msg = other ? `「${CNT10[other]}」(${other}개)라고 들렸어요. 지금은 ${want}개째예요.`
-            : plain ? '물건을 셀 때는 いち·に·さん이 아니라 ひとつ·ふたつ·みっつ…로 세요.' : '잘 알아듣지 못했어요. 🔊로 들어 보고 다시 말해 보세요.';
-        c.heard = best.heard;
-        if (other || plain) sfx('no');
-        logEvent('practice', { corner: 'count', n: want, ok: false, heard: best.heard }, 'practice');
+const prC = () => ui.prCount || (ui.prCount = { mode: 'practice', n: 0, logged: false });
+const prRand = (a, b) => a + Math.floor(Math.random() * (b - a + 1));
+
+/* 다코야키 옮기기: 짧게 누르면 반대편으로, 끌어서 놓으면 놓은 곳으로 */
+function prTakoMove(from, to) {
+    const c = prC(); if (from === to) return;
+    if (c.mode === 'practice') {
+        if (to === 'dish') { if (c.n >= 10) return; c.n++; speakJa(CNT10[c.n]); }
+        else { if (c.n <= 0) return; c.n--; if (c.n) speakJa(CNT10[c.n]); }
+        if (c.n === 10 && !c.logged) { c.logged = true; logEvent('practice', { corner: 'count', practice: true }, 'practice'); }
+    } else if (c.mode === 'quiz') {
+        const q = c.qs[c.i]; if (q.part !== 'listen' || q.res) return;
+        if (to === 'dish') { if (q.dish >= 10) return; q.dish++; } else { if (q.dish <= 0) return; q.dish--; }
     }
-}
-/* 팬의 다코야키를 손가락(마우스)으로 끌어 접시에 놓기 */
-function prCountDrop() {
-    const c = ui.prCount || (ui.prCount = { n: 0, tries: 0 }); if (c.n >= 10 || c.pend) return;
-    if (JA_SR) { c.pend = true; c.msg = ''; speakJa('いくつですか'); }   // 놓으면 "몇 개예요?" → 학생이 말하기
-    else { c.n++; speakJa(CNT10[c.n]); }                                   // 음성 인식이 없으면 소리로 들려주기
     renderPractice();
 }
-function prTakoDown(ev) {
-    const c = ui.prCount || {}; if (c.pend || c.n >= 10) return;
+function prTakoDown(ev, from) {
     ev.preventDefault();
-    const src = ev.currentTarget, r = src.getBoundingClientRect();
-    const g = src.cloneNode(true);
-    g.style.cssText = `position:fixed;left:${r.left}px;top:${r.top}px;width:${r.width}px;height:${r.height}px;z-index:9999;pointer-events:none;transform:scale(1.15);filter:drop-shadow(0 6px 8px rgba(0,0,0,.35))`;
-    document.body.appendChild(g); src.style.opacity = '0.25';
-    const dx = ev.clientX - r.left, dy = ev.clientY - r.top;
-    const move = e => { g.style.left = (e.clientX - dx) + 'px'; g.style.top = (e.clientY - dy) + 'px'; };
+    const src = ev.currentTarget, r = src.getBoundingClientRect(), x0 = ev.clientX, y0 = ev.clientY;
+    let g = null;
+    const move = e => {
+        if (!g && Math.hypot(e.clientX - x0, e.clientY - y0) < 8) return;      // 조금만 움직이면 '누르기'로 봄
+        if (!g) { g = src.cloneNode(true); g.removeAttribute('onpointerdown'); src.style.opacity = '0.25';
+            g.style.cssText = `position:fixed;width:${r.width}px;height:${r.height}px;z-index:9999;pointer-events:none;transform:scale(1.15);filter:drop-shadow(0 6px 8px rgba(0,0,0,.35))`; document.body.appendChild(g); }
+        g.style.left = (e.clientX - r.width / 2) + 'px'; g.style.top = (e.clientY - r.height / 2) + 'px';
+    };
     const up = e => {
         document.removeEventListener('pointermove', move); document.removeEventListener('pointerup', up); document.removeEventListener('pointercancel', up);
+        if (e.type !== 'pointerup') { if (g) { g.remove(); src.style.opacity = ''; } return; }
+        if (!g) { prTakoMove(from, from === 'pan' ? 'dish' : 'pan'); return; }   // 누르기
         g.remove(); src.style.opacity = '';
-        const d = document.getElementById('prDish'); if (!d) return;
-        const b = d.getBoundingClientRect();
-        if (e.type === 'pointerup' && e.clientX >= b.left && e.clientX <= b.right && e.clientY >= b.top && e.clientY <= b.bottom) prCountDrop();
+        const inBox = id => { const d = $(id); if (!d) return false; const b = d.getBoundingClientRect(); return e.clientX >= b.left && e.clientX <= b.right && e.clientY >= b.top && e.clientY <= b.bottom; };
+        if (inBox('prDish')) prTakoMove(from, 'dish'); else if (inBox('prPan')) prTakoMove(from, 'pan');
     };
     document.addEventListener('pointermove', move); document.addEventListener('pointerup', up); document.addEventListener('pointercancel', up);
 }
-function prCountReset() { ui.prCount = { n: 0, tries: 0, pend: false }; renderPractice(); }
+
+/* 퀴즈 만들기 */
+function prCountQuiz() {
+    const listen = shuffle([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]).slice(0, 5).map(t => ({ part: 'listen', want: t, dish: 0 }));
+    const speak = []; let k = prRand(2, 6), prev = 0;
+    for (let j = 0; j < 5; j++) {
+        if (j) { let d; do { d = (Math.random() < 0.5 ? -1 : 1) * prRand(1, 3); } while (k + d < 1 || k + d > 10); k += d; }
+        speak.push({ part: 'speak', want: k, prev, tries: 0 }); prev = k;
+    }
+    Object.assign(prC(), { mode: 'quiz', qs: [...listen, ...speak], i: 0, msg: '', heard: '', start: Date.now() });
+    ui.prMsg = ''; prCountAsk(); renderPractice();
+}
+function prCountAsk() {
+    const c = prC(), q = c.qs[c.i];
+    setTimeout(() => { if (ui.screen !== 'practice' || ui.prTab !== 'count' || prC().qs !== c.qs || c.qs[c.i] !== q) return;
+        speakJa(q.part === 'listen' ? CNT10[q.want] : 'いくつですか', true); }, 350);
+}
+function prCountLog(q) { logEvent('practice', { corner: 'count', part: q.part, want: q.want, got: q.got ?? null, ok: q.res === 'ok', late: q.res === 'late', heard: q.heard || '' }, 'practice'); }
+function prCountCheck() {                          // (가) 다 옮겼어요
+    const c = prC(), q = c.qs[c.i]; if (q.res) return;
+    q.got = q.dish; q.res = q.dish === q.want ? 'ok' : 'no';
+    sfx(q.res === 'ok' ? 'ok' : 'no'); prCountLog(q); renderPractice();
+}
+function prCountSpeak(alts) {                      // (나) 말하기 판정
+    const c = prC(), q = c.qs[c.i]; if (!q || q.part !== 'speak' || q.res) return;
+    let best = null;
+    for (const a of alts) { const r = prCountWords(a); if (r.found.includes(q.want)) { best = { ok: true, heard: a }; break; } if (!best) best = { ok: false, heard: a, r }; }
+    q.tries++; q.heard = best.heard; c.heard = best.heard;
+    if (best.ok) { q.res = q.tries === 1 ? 'ok' : 'late'; q.got = q.got ?? q.want; c.msg = ''; sfx('ok'); prCountLog(q); return; }
+    const other = best.r.found.find(k => k !== q.want), plain = /いち|に|さん|よん|し|ご|ろく|なな|しち|はち|きゅう|じゅう|\d/.test(best.r.t);
+    if (other || plain) sfx('no');
+    if (other) q.got = q.got ?? other;
+    c.msg = other ? `「${CNT10[other]}」(${other}개)라고 들렸어요.` : plain ? '물건을 셀 때는 いち·に·さん이 아니라 ひとつ·ふたつ·みっつ…로 세요.' : '잘 알아듣지 못했어요. 다시 말해 보세요.';
+    if (q.tries >= 2 && (other || plain)) { q.res = 'no'; prCountLog(q); }   // 두 번 틀리면 정답 보여 주기
+}
+function prCountPick(n) {                          // 음성 인식이 안 되는 기기: 골라서 답하기
+    const c = prC(), q = c.qs[c.i]; if (q.res) return;
+    q.tries = 1; q.got = n; q.res = n === q.want ? 'ok' : 'no'; q.heard = '(골라서 답함)';
+    sfx(q.res === 'ok' ? 'ok' : 'no'); prCountLog(q); renderPractice();
+}
+function prCountNext() {
+    const c = prC(); stopPrListen(); ui.prMsg = ''; c.msg = ''; c.heard = '';
+    if (c.i < c.qs.length - 1) { c.i++; prCountAsk(); }
+    else {
+        c.mode = 'result';
+        const a = c.qs.filter(q => q.part === 'listen' && q.res === 'ok').length, b = c.qs.filter(q => q.part === 'speak' && q.res === 'ok').length;
+        c.a = a; c.b = b;
+        logEvent('practice', { corner: 'count', done: true, listen: a, speak: b, score: a + b, sec: Math.round((Date.now() - c.start) / 1000) }, 'practice');
+        try { const best = JSON.parse(localStorage.getItem('oisii_cnt_best') || '0'); if (a + b > best) localStorage.setItem('oisii_cnt_best', JSON.stringify(a + b)); c.best = Math.max(best, a + b); } catch (e) { c.best = a + b; }
+    }
+    renderPractice();
+}
+function prCountReset(mode) { stopPrListen(); ui.prMsg = ''; ui.prCount = { mode: mode || 'practice', n: 0, logged: prC().logged }; renderPractice(); }
+
 function prCountHTML() {
-    const c = ui.prCount || (ui.prCount = { n: 0, tries: 0 }), want = c.n + 1, done = c.n >= 10;
+    const c = prC();
     const NUM = ['', 'いち', 'に', 'さん', 'よん', 'ご', 'ろく', 'なな', 'はち', 'きゅう', 'じゅう'];
     const theory = `<div class="bg-white border border-gray-200 rounded-2xl p-3"><p class="text-xs font-black text-gray-800 mb-1.5">📖 물건 세는 법 <span class="font-medium text-gray-500">(누르면 소리가 나요 · 아래 작은 글씨는 그냥 숫자 읽기)</span></p>
         <div class="grid grid-cols-5 gap-1.5">${CNT10.slice(1).map((w, i) => `<button type="button" onclick="speakJa('${w}')" class="rounded-xl border-2 ${i === 9 ? 'border-red-300 bg-red-50' : 'border-orange-200 bg-orange-50'} py-1.5 text-center hover:bg-orange-100"><span class="block text-[10px] font-bold text-gray-500">${i + 1}개</span><span class="block jp-font text-xs sm:text-sm font-black text-gray-900">${w}</span><span class="block jp-font text-[9px] text-gray-400">${NUM[i + 1]}</span></button>`).join('')}</div>
         <p class="text-[11px] text-gray-600 mt-1.5">• 몇 개예요? → <b class="jp-font">いくつですか</b> <button type="button" onclick="speakJa('いくつですか')">🔊</button> · 10개는 <b class="jp-font">とお</b>(「つ」가 붙지 않아요) · 11개부터는 숫자 그대로 <b class="jp-font">じゅういち</b>…</p></div>`;
-    const slot = i => ({ x: PAN_X[i % 6], y: PAN_Y[Math.floor(i / 6)] });
-    const tako = (x, y, w, extra = '', drag = false) => `<img src="images/pr_tako.png" alt="" draggable="false" ${drag ? 'onpointerdown="prTakoDown(event)"' : ''} class="absolute select-none ${drag ? 'cursor-grab' : 'pointer-events-none'} ${extra}" style="left:${x}%;top:${y}%;width:${w}%;transform:translate(-50%,-50%);${drag ? 'touch-action:none;' : ''}" onerror="this.outerHTML='<span class=&quot;absolute text-2xl&quot; style=&quot;left:${x}%;top:${y}%;transform:translate(-50%,-50%)&quot;>🐙</span>'">`;
-    const onN = c.n + (c.pend ? 1 : 0), canDrag = !done && !c.pend;
-    const inPan = Array.from({ length: 10 }, (_, i) => i).filter(i => i >= onN).map(i => { const p = slot(i); return tako(p.x, p.y, 13.5, '', canDrag); }).join('');
-    const DX = [22, 36, 50, 64, 78], DY = [40, 62];
-    const onDish = Array.from({ length: onN }, (_, i) => tako(DX[i % 5], DY[Math.floor(i / 5)], 15, i === c.n && c.pend ? 'animate-bounce' : '')).join('');
-    const said = Array.from({ length: c.n }, (_, i) => `<span class="jp-font text-[11px] font-bold bg-white border border-orange-200 rounded-full px-2 py-0.5">${CNT10[i + 1]}</span>`).join('');
-    return `<div class="bg-amber-50 border border-amber-200 rounded-2xl p-3 text-xs sm:text-sm text-amber-950 leading-relaxed">🐙 먼저 아래 표로 세는 법을 익히고, 다코야키를 하나씩 접시로 옮기며 <b>개수를 일본어로</b> 말해요.</div>
-        ${theory}
-        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 items-center">
-            <div class="relative"><img src="images/pr_pan.png" alt="다코야키 팬" class="w-full select-none" onerror="this.style.background='#2b2b2b';this.style.minHeight='140px'">${inPan}</div>
-            <div><div id="prDish" class="relative rounded-2xl" style="${canDrag ? 'outline:2px dashed #6ee7b7;outline-offset:2px' : ''}"><img src="images/pr_dish.png" alt="접시" class="w-full select-none" draggable="false">${onDish}</div>
-                <p class="text-center text-xs font-black text-gray-700 mt-1">🍽️ 접시 · ${c.pend ? '?' : c.n}개</p><div class="flex flex-wrap gap-1 justify-center mt-1">${said}</div></div>
-        </div>
-        ${done ? `<div class="bg-emerald-50 border-2 border-emerald-400 rounded-3xl p-4 text-center space-y-2"><p class="text-base font-black text-emerald-800">🎉 <span class="jp-font">とお</span>까지 다 셌어요!</p><button type="button" onclick="prCountReset()" class="w-full py-3 rounded-2xl bg-emerald-600 text-white font-black text-sm">🔄 다시 하기</button></div>`
-        : `<div class="bg-white border-2 border-emerald-300 rounded-3xl p-4 space-y-2">
-            ${c.pend
-                ? `<p class="text-sm font-black text-gray-800 text-center"><span class="jp-font">いくつですか</span> <button type="button" onclick="speakJa('いくつですか')">🔊</button> — 접시에 몇 개 있는지 일본어로 말해요. <button type="button" onclick="speakJa(CNT10[${want}])" class="text-xs font-bold text-emerald-700 underline ml-1">💡 정답 듣기</button></p>
-                   ${prMicBtn(`🎤 개수를 일본어로 말하기`, 'prListen(prCountHeard)')}`
-                : `<p class="text-sm font-black text-gray-800 text-center">👆 팬의 다코야키 하나를 <b>꾹 눌러 끌어서</b> 접시에 놓아요. ${c.n ? `<span class="text-xs text-gray-500">(지금 ${c.n}개)</span>` : ''}</p>
-                   ${JA_SR ? '' : prMicBtn('', '')}`}
-            ${c.msg ? `<div class="rounded-2xl border px-3 py-2 text-xs ${c.kind === 'wrong' ? 'bg-red-50 border-red-200 text-red-700' : 'bg-gray-50 border-gray-200 text-gray-700'}"><p class="font-bold">${esc(c.msg)}</p><p class="text-[11px] text-gray-500 mt-0.5">앱이 들은 말: <span class="jp-font font-bold">「${esc(c.heard || '')}」</span></p></div>` : ''}
-            ${ui.prMsg ? `<p class="text-xs font-bold text-red-600 text-center">${esc(ui.prMsg)}</p>` : ''}
-            <button type="button" onclick="prCountReset()" class="w-full text-[11px] text-gray-400 underline">처음부터</button></div>`}`;
+    const tako = (x, y, w, from, extra = '') => `<img src="images/pr_tako.png" alt="" draggable="false" ${from ? `onpointerdown="prTakoDown(event,'${from}')"` : ''} class="absolute select-none ${from ? 'cursor-pointer' : 'pointer-events-none'} ${extra}" style="left:${x}%;top:${y}%;width:${w}%;transform:translate(-50%,-50%);${from ? 'touch-action:none;' : ''}" onerror="this.outerHTML='<span class=&quot;absolute text-2xl&quot; style=&quot;left:${x}%;top:${y}%;transform:translate(-50%,-50%)&quot;>🐙</span>'">`;
+    /* 팬과 접시 그리기: onDish=접시 개수, canMove=옮길 수 있나, bounceFrom=이 번호부터 새로 놓인 것(통통) */
+    const board = (onDish, canMove, bounceFrom = 99, label = '') => {
+        const PDX = [22, 36, 50, 64, 78], PDY = [40, 62];
+        const pan = Array.from({ length: 10 }, (_, i) => i).filter(i => i >= onDish).map(i => tako(PAN_X[i % 6], PAN_Y[Math.floor(i / 6)], 13.5, canMove ? 'pan' : '')).join('');
+        const dish = Array.from({ length: onDish }, (_, i) => tako(PDX[i % 5], PDY[Math.floor(i / 5)], 15, canMove ? 'dish' : '', i >= bounceFrom ? 'animate-bounce' : '')).join('');
+        return `<div class="grid grid-cols-1 sm:grid-cols-2 gap-3 items-center">
+            <div id="prPan" class="relative"><img src="images/pr_pan.png" alt="다코야키 팬" class="w-full select-none" draggable="false" onerror="this.style.background='#2b2b2b';this.style.minHeight='140px'">${pan}</div>
+            <div><div id="prDish" class="relative rounded-2xl" style="${canMove ? 'outline:2px dashed #6ee7b7;outline-offset:2px' : ''}"><img src="images/pr_dish.png" alt="접시" class="w-full select-none" draggable="false">${dish}</div>
+                <p class="text-center text-xs font-black text-gray-700 mt-1">${label}</p></div></div>`;
+    };
+    const modeTabs = `<div class="grid grid-cols-2 gap-2">
+        <button type="button" onclick="prCountReset('practice')" class="py-2.5 rounded-xl text-xs sm:text-sm font-black border-2 ${c.mode === 'practice' ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-white text-gray-700 border-gray-200'}">✋ 연습 (채점 없음)</button>
+        <button type="button" onclick="prCountQuiz()" class="py-2.5 rounded-xl text-xs sm:text-sm font-black border-2 ${c.mode !== 'practice' ? 'bg-orange-500 text-white border-orange-500' : 'bg-white text-gray-700 border-gray-200'}">📝 퀴즈 10문제</button></div>`;
+
+    if (c.mode === 'practice') {
+        const said = Array.from({ length: c.n }, (_, i) => `<span class="jp-font text-[11px] font-bold bg-white border border-orange-200 rounded-full px-2 py-0.5">${CNT10[i + 1]}</span>`).join('');
+        return `<div class="bg-amber-50 border border-amber-200 rounded-2xl p-3 text-xs sm:text-sm text-amber-950 leading-relaxed">🐙 표로 세는 법을 익히고, <b>연습</b>에서 다코야키를 옮기며 소리를 따라 말해 보세요. 자신 있으면 <b>퀴즈</b>에 도전해요.</div>
+            ${theory}${modeTabs}
+            <div class="bg-white border-2 border-emerald-300 rounded-3xl p-3 space-y-2">
+                <p class="text-sm font-black text-gray-800 text-center">👆 다코야키를 <b>누르거나 끌어서</b> 접시로 옮겨요. 앱이 읽어 주는 소리를 <b>입으로 따라 말해요.</b></p>
+                <p class="text-[11px] text-gray-500 text-center">접시의 다코야키를 누르면 팬으로 돌아가요.</p>
+                ${board(c.n, true, 99, `🍽️ 접시 · ${c.n}개`)}
+                <div class="flex flex-wrap gap-1 justify-center">${said}</div>
+                ${c.n >= 10 ? `<div class="bg-emerald-50 border border-emerald-300 rounded-2xl p-3 text-center space-y-2"><p class="text-sm font-black text-emerald-800">🎉 <span class="jp-font">とお</span>까지 옮겼어요!</p>
+                    <button type="button" onclick="prCountQuiz()" class="w-full py-3 rounded-2xl bg-orange-500 text-white font-black text-sm">📝 퀴즈 풀러 가기</button></div>` : ''}
+                <button type="button" onclick="prCountReset('practice')" class="w-full text-[11px] text-gray-400 underline">처음부터</button></div>`;
+    }
+
+    if (c.mode === 'result') {
+        const row = q => `<div class="flex items-center justify-between text-xs border-b border-gray-100 py-1"><span>${q.part === 'listen' ? '👂 듣고 옮기기' : '🗣️ 보고 말하기'}</span><span class="jp-font font-bold">${CNT10[q.want]} (${q.want}개)</span><span class="font-black ${q.res === 'ok' ? 'text-emerald-600' : q.res === 'late' ? 'text-amber-600' : 'text-red-600'}">${q.res === 'ok' ? '⭕' : q.res === 'late' ? '△ 두 번째에' : `❌${q.got != null ? ` (${q.got}개)` : ''}`}</span></div>`;
+        return `${modeTabs}<div class="bg-white border-2 border-orange-200 rounded-3xl p-4 space-y-3 text-center">
+            <p class="text-lg font-black text-gray-900">🎉 퀴즈 끝!</p>
+            <div class="grid grid-cols-2 gap-2"><div class="bg-sky-50 rounded-2xl p-2"><p class="text-[11px] font-bold text-sky-700">👂 듣고 옮기기</p><p class="text-2xl font-black text-sky-800">${c.a} / 5</p></div>
+                <div class="bg-emerald-50 rounded-2xl p-2"><p class="text-[11px] font-bold text-emerald-700">🗣️ 보고 말하기</p><p class="text-2xl font-black text-emerald-800">${c.b} / 5</p></div></div>
+            <p class="text-xs text-gray-500">내 최고 기록 ${c.best ?? c.a + c.b} / 10 · 말하기는 한 번에 맞혀야 점수가 돼요</p>
+            <div class="text-left">${c.qs.map(row).join('')}</div>
+            <button type="button" onclick="prCountQuiz()" class="w-full py-3 rounded-2xl bg-orange-500 text-white font-black text-sm">🔄 새 퀴즈</button></div>`;
+    }
+
+    /* 퀴즈 진행 */
+    const q = c.qs[c.i], head = `<div class="flex items-center justify-between text-xs font-bold text-gray-600"><span>📝 퀴즈 ${c.i + 1} / 10 · ${q.part === 'listen' ? '👂 듣고 옮기기' : '🗣️ 보고 말하기'}</span><button type="button" onclick="prCountReset('practice')" class="text-gray-400 underline">그만하기</button></div>`;
+    const nextBtn = `<button type="button" onclick="prCountNext()" class="w-full py-3 rounded-2xl bg-gray-900 text-white font-black text-sm">${c.i < 9 ? '다음 문제 ▶' : '결과 보기 ▶'}</button>`;
+    if (q.part === 'listen') {
+        const res = q.res ? `<div class="rounded-2xl border-2 px-3 py-2 text-center ${q.res === 'ok' ? 'bg-emerald-50 border-emerald-300' : 'bg-red-50 border-red-200'}">
+                <p class="text-sm font-black ${q.res === 'ok' ? 'text-emerald-700' : 'text-red-700'}">${q.res === 'ok' ? '⭕ 맞았어요!' : `❌ ${q.got}개를 옮겼어요.`}</p>
+                <p class="text-xs text-gray-700 mt-0.5">들려준 말: <b class="jp-font">${CNT10[q.want]}</b> = ${q.want}개 <button type="button" onclick="speakJa(CNT10[${q.want}])">🔊</button></p></div>${nextBtn}` : '';
+        return `${head}<div class="bg-white border-2 border-sky-300 rounded-3xl p-3 space-y-2">
+            <p class="text-sm font-black text-gray-800 text-center">👂 잘 듣고, 들린 개수만큼 접시에 옮겨요. <button type="button" onclick="speakJa(CNT10[${q.want}])" class="ml-1 px-2 py-1 rounded-lg bg-sky-100 text-sky-800 text-xs font-black">🔊 다시 듣기</button></p>
+            ${board(q.dish, !q.res, 99, q.res ? `🍽️ 접시 · ${q.dish}개` : '🍽️ 접시')}
+            ${q.res ? res : `<button type="button" onclick="prCountCheck()" class="w-full py-3 rounded-2xl bg-sky-600 text-white font-black text-sm" ${q.dish ? '' : 'disabled style="opacity:.5"'}>✅ 다 옮겼어요</button>`}</div>`;
+    }
+    const changed = q.prev ? (q.want > q.prev ? `➕ 접시에 다코야키를 더 놓았어요!` : `➖ 접시에서 다코야키를 덜어 냈어요!`) : '🍽️ 접시에 다코야키를 놓았어요!';
+    const pick = !JA_SR && !q.res ? `<p class="text-[11px] text-gray-500 text-center">이 기기는 음성 인식이 안 돼요. 소리 내어 말한 뒤 골라 주세요.</p>
+        <div class="grid grid-cols-5 gap-1.5">${CNT10.slice(1).map((w, i) => `<button type="button" onclick="prCountPick(${i + 1})" class="jp-font rounded-xl border-2 border-gray-200 bg-white py-2 text-xs font-black hover:bg-emerald-50">${w}</button>`).join('')}</div>` : '';
+    const res = q.res ? `<div class="rounded-2xl border-2 px-3 py-2 text-center ${q.res === 'no' ? 'bg-red-50 border-red-200' : 'bg-emerald-50 border-emerald-300'}">
+            <p class="text-sm font-black ${q.res === 'no' ? 'text-red-700' : 'text-emerald-700'}">${q.res === 'ok' ? '⭕ 맞았어요!' : q.res === 'late' ? '⭕ 두 번째에 맞혔어요!' : '❌ 아쉬워요.'}</p>
+            <p class="text-xs text-gray-700 mt-0.5">정답: <b class="jp-font">${CNT10[q.want]}</b> = ${q.want}개 <button type="button" onclick="speakJa(CNT10[${q.want}])">🔊</button></p></div>${nextBtn}` : '';
+    return `${head}<div class="bg-white border-2 border-emerald-300 rounded-3xl p-3 space-y-2">
+        <p class="text-sm font-black text-gray-800 text-center">${changed}<br><span class="jp-font">いくつですか</span> <button type="button" onclick="speakJa('いくつですか')">🔊</button> <span class="text-xs font-bold text-gray-500">— 접시의 개수를 일본어로 말해요</span></p>
+        ${board(q.want, false, q.want > q.prev ? q.prev : 99, '🍽️ 접시')}
+        ${q.res ? res : JA_SR ? prMicBtn('🎤 개수를 일본어로 말하기', 'prListen(a => { prCountSpeak(a); })') : pick}
+        ${!q.res && c.msg ? `<div class="rounded-2xl border px-3 py-2 text-xs bg-red-50 border-red-200 text-red-700"><p class="font-bold">${esc(c.msg)} 한 번 더 세어 보세요.</p><p class="text-[11px] text-gray-500 mt-0.5">앱이 들은 말: <span class="jp-font font-bold">「${esc(c.heard || '')}」</span></p></div>` : ''}
+        ${ui.prMsg ? `<p class="text-xs font-bold text-red-600 text-center">${esc(ui.prMsg)}</p>` : ''}</div>`;
 }
 
 /* ---- ② 엔화와 숫자 읽기 ---- */
