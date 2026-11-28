@@ -3030,7 +3030,7 @@ function prPriceHTML() {
     }
     const it = p.items[p.i];
     const shown = p.revealed || p.ok;
-    const pic = it.kind === 'mart' ? `<img src="${it.img}" alt="${esc(it.kr)}" class="w-full max-h-[46vh] object-contain rounded-2xl border border-gray-200 bg-gray-50"><p class="text-xs font-bold text-gray-600 mt-1">${shown ? `<span class="jp-font">${esc(it.name)}</span> · ${esc(it.kr)}` : '🔎 가격표에서 가장 크게 쓰인 금액을 말해요'}</p>`
+    const pic = it.kind === 'mart' ? `<img src="${it.img}" alt="${esc(it.kr)}" onerror="if(!this.dataset.f){this.dataset.f=1;this.src=this.src.replace(/\.jpg$/,'.png')}" class="w-full max-h-[46vh] object-contain rounded-2xl border border-gray-200 bg-gray-50"><p class="text-xs font-bold text-gray-600 mt-1">${shown ? `<span class="jp-font">${esc(it.name)}</span> · ${esc(it.kr)}` : '🔎 가격표에서 가장 크게 쓰인 금액을 말해요'}</p>`
         : it.kind === 'menu' ? `${picHTML(it.id, it.icon, 'w-24 h-24', 'text-6xl')}<p class="jp-font text-base font-black text-gray-900 mt-1">${esc(it.name)}</p>`
         : `${moneyPic(it.n, it.n < 1000 ? 'w-28 h-28' : 'w-64 h-32 max-w-full', 'text-xl')}<p class="text-xs font-bold text-gray-600 mt-1">이 돈은 얼마예요?</p>`;
     return `<div class="flex items-center justify-between text-xs font-bold text-gray-600"><span>${p.retry ? '🔁 틀린 문제 다시' : '🗣️ 가격 말하기'} · ${p.i + 1} / ${p.items.length}</span><span>한 번에 맞힘 ${p.score}</span></div>
