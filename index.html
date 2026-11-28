@@ -2734,11 +2734,12 @@ function prCountWords(t) {                       // 들린 말 → 개수 말(�
 }
 function prCountHeard(alts) {
     const c = ui.prCount || (ui.prCount = { n: 0, tries: 0 }), want = c.n + 1;
+    if (!c.pend) return;
     let best = null;
     for (const a of alts) { const r = prCountWords(a); if (r.found.includes(want)) { best = { ok: true, heard: a }; break; } if (!best) best = { ok: false, heard: a, r }; }
     c.tries++;
     if (best.ok) {
-        c.n = want; c.msg = ''; c.kind = 'ok'; sfx('ok');
+        c.n = want; c.pend = false; c.msg = ''; c.kind = 'ok'; sfx('ok');
         logEvent('practice', { corner: 'count', n: want, ok: true, heard: best.heard }, 'practice');
         if (want === 10) logEvent('practice', { corner: 'count', done: true, tries: c.tries }, 'practice');
     } else {
@@ -2751,11 +2752,32 @@ function prCountHeard(alts) {
         logEvent('practice', { corner: 'count', n: want, ok: false, heard: best.heard }, 'practice');
     }
 }
-function prCountTap() {                          // 마이크가 없을 때: 눌러서 옮기고 소리로 확인
-    const c = ui.prCount || (ui.prCount = { n: 0, tries: 0 }); if (c.n >= 10) return;
-    c.n++; speakJa(CNT10[c.n]); renderPractice();
+/* 팬의 다코야키를 손가락(마우스)으로 끌어 접시에 놓기 */
+function prCountDrop() {
+    const c = ui.prCount || (ui.prCount = { n: 0, tries: 0 }); if (c.n >= 10 || c.pend) return;
+    if (JA_SR) { c.pend = true; c.msg = ''; speakJa('いくつですか'); }   // 놓으면 "몇 개예요?" → 학생이 말하기
+    else { c.n++; speakJa(CNT10[c.n]); }                                   // 음성 인식이 없으면 소리로 들려주기
+    renderPractice();
 }
-function prCountReset() { ui.prCount = { n: 0, tries: 0 }; renderPractice(); }
+function prTakoDown(ev) {
+    const c = ui.prCount || {}; if (c.pend || c.n >= 10) return;
+    ev.preventDefault();
+    const src = ev.currentTarget, r = src.getBoundingClientRect();
+    const g = src.cloneNode(true);
+    g.style.cssText = `position:fixed;left:${r.left}px;top:${r.top}px;width:${r.width}px;height:${r.height}px;z-index:9999;pointer-events:none;transform:scale(1.15);filter:drop-shadow(0 6px 8px rgba(0,0,0,.35))`;
+    document.body.appendChild(g); src.style.opacity = '0.25';
+    const dx = ev.clientX - r.left, dy = ev.clientY - r.top;
+    const move = e => { g.style.left = (e.clientX - dx) + 'px'; g.style.top = (e.clientY - dy) + 'px'; };
+    const up = e => {
+        document.removeEventListener('pointermove', move); document.removeEventListener('pointerup', up); document.removeEventListener('pointercancel', up);
+        g.remove(); src.style.opacity = '';
+        const d = document.getElementById('prDish'); if (!d) return;
+        const b = d.getBoundingClientRect();
+        if (e.type === 'pointerup' && e.clientX >= b.left && e.clientX <= b.right && e.clientY >= b.top && e.clientY <= b.bottom) prCountDrop();
+    };
+    document.addEventListener('pointermove', move); document.addEventListener('pointerup', up); document.addEventListener('pointercancel', up);
+}
+function prCountReset() { ui.prCount = { n: 0, tries: 0, pend: false }; renderPractice(); }
 function prCountHTML() {
     const c = ui.prCount || (ui.prCount = { n: 0, tries: 0 }), want = c.n + 1, done = c.n >= 10;
     const NUM = ['', 'いち', 'に', 'さん', 'よん', 'ご', 'ろく', 'なな', 'はち', 'きゅう', 'じゅう'];
@@ -2763,22 +2785,26 @@ function prCountHTML() {
         <div class="grid grid-cols-5 gap-1.5">${CNT10.slice(1).map((w, i) => `<button type="button" onclick="speakJa('${w}')" class="rounded-xl border-2 ${i === 9 ? 'border-red-300 bg-red-50' : 'border-orange-200 bg-orange-50'} py-1.5 text-center hover:bg-orange-100"><span class="block text-[10px] font-bold text-gray-500">${i + 1}개</span><span class="block jp-font text-xs sm:text-sm font-black text-gray-900">${w}</span><span class="block jp-font text-[9px] text-gray-400">${NUM[i + 1]}</span></button>`).join('')}</div>
         <p class="text-[11px] text-gray-600 mt-1.5">• 몇 개예요? → <b class="jp-font">いくつですか</b> <button type="button" onclick="speakJa('いくつですか')">🔊</button> · 10개는 <b class="jp-font">とお</b>(「つ」가 붙지 않아요) · 11개부터는 숫자 그대로 <b class="jp-font">じゅういち</b>…</p></div>`;
     const slot = i => ({ x: PAN_X[i % 6], y: PAN_Y[Math.floor(i / 6)] });
-    const tako = (x, y, w, extra = '') => `<img src="images/pr_tako.png" alt="" class="absolute pointer-events-none select-none ${extra}" style="left:${x}%;top:${y}%;width:${w}%;transform:translate(-50%,-50%)" onerror="this.outerHTML='<span class=&quot;absolute text-2xl&quot; style=&quot;left:${x}%;top:${y}%;transform:translate(-50%,-50%)&quot;>🐙</span>'">`;
-    const inPan = Array.from({ length: 10 }, (_, i) => i).filter(i => i >= c.n).map(i => { const p = slot(i); return tako(p.x, p.y, 13.5, i === c.n && !done ? 'animate-pulse' : ''); }).join('');
+    const tako = (x, y, w, extra = '', drag = false) => `<img src="images/pr_tako.png" alt="" draggable="false" ${drag ? 'onpointerdown="prTakoDown(event)"' : ''} class="absolute select-none ${drag ? 'cursor-grab' : 'pointer-events-none'} ${extra}" style="left:${x}%;top:${y}%;width:${w}%;transform:translate(-50%,-50%);${drag ? 'touch-action:none;' : ''}" onerror="this.outerHTML='<span class=&quot;absolute text-2xl&quot; style=&quot;left:${x}%;top:${y}%;transform:translate(-50%,-50%)&quot;>🐙</span>'">`;
+    const onN = c.n + (c.pend ? 1 : 0), canDrag = !done && !c.pend;
+    const inPan = Array.from({ length: 10 }, (_, i) => i).filter(i => i >= onN).map(i => { const p = slot(i); return tako(p.x, p.y, 13.5, '', canDrag); }).join('');
     const DX = [22, 36, 50, 64, 78], DY = [40, 62];
-    const onDish = Array.from({ length: c.n }, (_, i) => tako(DX[i % 5], DY[Math.floor(i / 5)], 15)).join('');
+    const onDish = Array.from({ length: onN }, (_, i) => tako(DX[i % 5], DY[Math.floor(i / 5)], 15, i === c.n && c.pend ? 'animate-bounce' : '')).join('');
     const said = Array.from({ length: c.n }, (_, i) => `<span class="jp-font text-[11px] font-bold bg-white border border-orange-200 rounded-full px-2 py-0.5">${CNT10[i + 1]}</span>`).join('');
     return `<div class="bg-amber-50 border border-amber-200 rounded-2xl p-3 text-xs sm:text-sm text-amber-950 leading-relaxed">🐙 먼저 아래 표로 세는 법을 익히고, 다코야키를 하나씩 접시로 옮기며 <b>개수를 일본어로</b> 말해요.</div>
         ${theory}
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 items-center">
             <div class="relative"><img src="images/pr_pan.png" alt="다코야키 팬" class="w-full select-none" onerror="this.style.background='#2b2b2b';this.style.minHeight='140px'">${inPan}</div>
-            <div><div class="relative"><img src="images/pr_dish.png" alt="접시" class="w-full select-none">${onDish}</div>
-                <p class="text-center text-xs font-black text-gray-700 mt-1">🍽️ 접시 · ${c.n}개</p><div class="flex flex-wrap gap-1 justify-center mt-1">${said}</div></div>
+            <div><div id="prDish" class="relative rounded-2xl" style="${canDrag ? 'outline:2px dashed #6ee7b7;outline-offset:2px' : ''}"><img src="images/pr_dish.png" alt="접시" class="w-full select-none" draggable="false">${onDish}</div>
+                <p class="text-center text-xs font-black text-gray-700 mt-1">🍽️ 접시 · ${c.pend ? '?' : c.n}개</p><div class="flex flex-wrap gap-1 justify-center mt-1">${said}</div></div>
         </div>
         ${done ? `<div class="bg-emerald-50 border-2 border-emerald-400 rounded-3xl p-4 text-center space-y-2"><p class="text-base font-black text-emerald-800">🎉 <span class="jp-font">とお</span>까지 다 셌어요!</p><button type="button" onclick="prCountReset()" class="w-full py-3 rounded-2xl bg-emerald-600 text-white font-black text-sm">🔄 다시 하기</button></div>`
         : `<div class="bg-white border-2 border-emerald-300 rounded-3xl p-4 space-y-2">
-            <p class="text-sm font-black text-gray-800 text-center">${want}번째 다코야키를 옮길 차례예요. <button type="button" onclick="speakJa(CNT10[${want}])" class="text-xs font-bold text-emerald-700 underline ml-1">🔊 들어 보기</button></p>
-            ${JA_SR ? prMicBtn(`🎤 ${want}개째를 일본어로 말하기`, 'prListen(prCountHeard)') : `<button type="button" onclick="prCountTap()" class="w-full py-3 rounded-2xl bg-emerald-600 text-white font-black text-sm">👆 다코야키 옮기기 (소리를 듣고 따라 말해요)</button>${prMicBtn('', '')}`}
+            ${c.pend
+                ? `<p class="text-sm font-black text-gray-800 text-center"><span class="jp-font">いくつですか</span> <button type="button" onclick="speakJa('いくつですか')">🔊</button> — 접시에 몇 개 있는지 일본어로 말해요. <button type="button" onclick="speakJa(CNT10[${want}])" class="text-xs font-bold text-emerald-700 underline ml-1">💡 정답 듣기</button></p>
+                   ${prMicBtn(`🎤 개수를 일본어로 말하기`, 'prListen(prCountHeard)')}`
+                : `<p class="text-sm font-black text-gray-800 text-center">👆 팬의 다코야키 하나를 <b>꾹 눌러 끌어서</b> 접시에 놓아요. ${c.n ? `<span class="text-xs text-gray-500">(지금 ${c.n}개)</span>` : ''}</p>
+                   ${JA_SR ? '' : prMicBtn('', '')}`}
             ${c.msg ? `<div class="rounded-2xl border px-3 py-2 text-xs ${c.kind === 'wrong' ? 'bg-red-50 border-red-200 text-red-700' : 'bg-gray-50 border-gray-200 text-gray-700'}"><p class="font-bold">${esc(c.msg)}</p><p class="text-[11px] text-gray-500 mt-0.5">앱이 들은 말: <span class="jp-font font-bold">「${esc(c.heard || '')}」</span></p></div>` : ''}
             ${ui.prMsg ? `<p class="text-xs font-bold text-red-600 text-center">${esc(ui.prMsg)}</p>` : ''}
             <button type="button" onclick="prCountReset()" class="w-full text-[11px] text-gray-400 underline">처음부터</button></div>`}`;
@@ -2786,7 +2812,7 @@ function prCountHTML() {
 
 /* ---- ② 엔화와 숫자 읽기 ---- */
 /* 돈 그림: 그림 파일이 있으면 사진, 없으면(2,000엔 등) 색깔 모양으로 */
-const MONEY_IMG = { 1: 'coin_1.png', 5: 'coin_5.png', 10: 'coin_10.png', 50: 'coin_50.png', 100: 'coin_100.png', 500: 'coin_500.png', 1000: 'bill_1000.jpg', 5000: 'bill_5000.jpg', 10000: 'bill_10000.jpg' };
+const MONEY_IMG = { 1: 'coin_1.png', 5: 'coin_5.png', 10: 'coin_10.png', 50: 'coin_50.png', 100: 'coin_100.png', 500: 'coin_500.png', 1000: 'bill_1000.jpg', 2000: 'bill_2000.jpg', 5000: 'bill_5000.jpg', 10000: 'bill_10000.jpg' };
 function moneyBox(n, size, txt) {
     const coin = n < 1000;
     return `<span class="${size} ${coin ? 'rounded-full' : 'rounded-md'} inline-flex items-center justify-center ${txt} font-black text-white shadow-sm" style="background:${coin ? (n >= 100 ? '#b8b8b8' : n === 5 || n === 50 ? '#c9a227' : n === 10 ? '#b87333' : '#d9d9d9') : n === 10000 ? '#b78f6a' : n === 5000 ? '#8b7bb5' : n === 2000 ? '#5a9e7c' : '#5f7fb3'}">${yen(n)}</span>`;
