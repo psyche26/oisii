@@ -1797,7 +1797,9 @@ function newCard(round) {
         /* 낼 돈: 딱 맞게(20%) · 합계보다 큰 가장 작은 돈(50%) · 더 큰 돈, 만 엔까지(30%) */
         const bills = [500, 1000, 2000, 5000, 10000].filter(p => p > total), r = Math.random();
         const pay = r < 0.2 ? total : r < 0.7 || bills.length < 2 ? bills[0] : bills[1 + Math.floor(Math.random() * (bills.length - 1))];
-        return { A, B, a, b, n: rnd(4), pay, round };
+        const prevN = round === 2 && myGroup().relay.card ? myGroup().relay.card.n : 0;   // 2판은 1판과 다른 손님 수
+        let n = rnd(4); while (n === prevN) n = rnd(4);
+        return { A, B, a, b, n, pay, round };
     }
     return { A: 'udon', B: 'taiyaki', a: 1, b: 1, n: 2, pay: round === 1 ? 590 : 1000, round };
 }
@@ -2179,7 +2181,7 @@ function relaySpeakHTML(rl, l, who) {
 }
 function relayCardHTML(card) {
     const A = menuById(card.A), B = menuById(card.B), row = (m, q) => `<div class="flex items-center gap-2 bg-white rounded-xl border border-amber-200 px-2 py-1">${picHTML(m.id, m.icon, 'w-9 h-9', 'text-2xl')}<span class="jp-font text-sm font-black">${esc(m.kana)}</span><span class="text-[11px] text-gray-500">${esc(m.kr)}</span><span class="ml-auto text-xs font-black text-orange-700">${yen(MENU_PRICE[m.id])}円 × ${q}</span></div>`;
-    return `<div class="bg-amber-50 border-2 border-amber-300 rounded-2xl p-3 space-y-1.5"><p class="text-xs font-black text-amber-900">🃏 상황카드 <span class="font-medium text-amber-800">· 손님 ${card.n}명 (${NIN[card.n]}) · 낼 돈 <b>${yen(card.pay)}円</b>${card.pay === MENU_PRICE[card.A] * card.a + MENU_PRICE[card.B] * card.b ? ' (딱 맞게)' : ''}${card.round === 2 ? ' · 합계와 거스름돈은 점원(우리)이 계산해요' : ''}</span></p>${row(A, card.a)}${row(B, card.b)}</div>`;
+    return `<div class="bg-amber-50 border-2 border-amber-300 rounded-2xl p-3 space-y-1.5"><p class="text-xs font-black text-amber-900">🃏 상황카드 <span class="font-medium text-amber-800">· 손님 ${card.n}명 · 낼 돈 <b>${yen(card.pay)}円</b>${card.pay === MENU_PRICE[card.A] * card.a + MENU_PRICE[card.B] * card.b ? ' (딱 맞게)' : ''}${card.round === 2 ? ' · 합계와 거스름돈은 점원(우리)이 계산해요' : ''}</span></p>${row(A, card.a)}${row(B, card.b)}</div>`;
 }
 function mealHTML(l, rl) {   // 식사 장면: おまたせしました + 주문한 음식 + 식사 중 → 계산대로
     const c = rl.card || {}, A = menuById(c.A), B = menuById(c.B), eating = Date.now() < (ui.eatingUntil || 0);
