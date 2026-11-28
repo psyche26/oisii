@@ -86,7 +86,7 @@
             <span class="block text-base sm:text-xl font-black text-orange-700">⭐ 우리의 5단계 그랜드 오픈 여정</span>
             <div id="stepList" class="space-y-2.5 mt-3"></div>
             <button type="button" onclick="go('practice')" class="mt-3 w-full flex items-center gap-3 rounded-2xl border-2 border-dashed border-emerald-400 bg-emerald-50 hover:bg-emerald-100 p-3 text-left">
-                <span class="text-2xl">🏋️</span><span class="min-w-0"><span class="block text-sm sm:text-base font-black text-emerald-900">연습실 · 준비 운동</span><span class="block text-[11px] sm:text-xs text-emerald-800">개수 세기 · 엔화와 숫자 · 가격 말하기 (언제든 혼자 연습해요)</span></span><span class="ml-auto text-emerald-700 font-black">→</span>
+                <span class="text-2xl">🎧</span><span class="min-w-0"><span class="block text-sm sm:text-base font-black text-emerald-900">혼자 연습하기</span><span class="block text-[11px] sm:text-xs text-emerald-800">개수 세기 · 백 단위·천 단위 숫자 읽기 · 엔화로 가격 말하기</span><span class="block text-[11px] sm:text-xs text-emerald-700 mt-0.5">언제든지 혼자 연습해요. 연습 기록이 남아 선생님의 피드백을 받을 수 있어요.</span></span><span class="ml-auto text-emerald-700 font-black">→</span>
             </button>
         </div>
 
@@ -325,7 +325,7 @@
         <div class="shrink-0">
             <div class="flex items-center justify-between border-b border-orange-100 pb-3">
                 <button onclick="go('main')" class="text-sm font-bold text-orange-600 hover:text-orange-800">← 메인</button>
-                <div class="text-center min-w-0 px-2"><span class="text-base font-extrabold text-orange-950">🏋️ 연습실 · 준비 운동</span><p class="text-[11px] sm:text-xs text-gray-500 font-medium mt-0.5">회화 릴레이 전에 개수와 금액을 혼자 연습해요.</p></div>
+                <div class="text-center min-w-0 px-2"><span class="text-base font-extrabold text-orange-950">🎧 혼자 연습하기</span><p class="text-[11px] sm:text-xs text-gray-500 font-medium mt-0.5">연습 기록이 남아 선생님의 피드백을 받을 수 있어요.</p></div>
                 <span class="text-xs font-bold bg-emerald-100 text-emerald-800 px-2.5 py-1 rounded-md">개인 연습</span>
             </div>
             <div class="grid grid-cols-3 gap-2 mt-3">
@@ -2238,7 +2238,7 @@ function renderRelay() {
         html = `<div class="bg-white border-2 border-orange-300 rounded-3xl p-5 space-y-3 text-center">
             <p class="text-base font-black text-orange-950">🗣️ 가게에서 주문하기 릴레이</p>
             <p class="text-xs sm:text-sm text-gray-600 leading-relaxed text-left">• 대화는 いらっしゃいませ 부터 거스름돈까지 9줄이에요. 주문한 뒤에는 <b>식사 장면</b>이 나오고, 다 먹으면 <b>계산대</b>로 가요.<br>• <b>1판</b>은 우리가 <b>손님</b>(4번), <b>2판</b>은 우리가 <b>점원</b>(5번)! 나머지 말은 컴퓨터가 해요.<br>• 순서는 <b>랜덤</b>으로 뽑아요. 차례가 되면 먼저 <b>🎤 일본어로 말해 보고</b>, 모르겠으면 <b>💡 힌트</b>로 보기 3개 중에서 골라요.<br>• 주문할 때는 「〜ください」도 「〜にします」도 좋고, を·と 를 빼고 말해도 정답이에요.<br>• 상황카드(인원·메뉴·개수·낼 돈)는 판마다 달라요. 2판에서 점원이 되면 <b>합계와 거스름돈을 직접 계산</b>해서 말해요!</p>
-            <button type="button" onclick="go('practice')" class="w-full py-2.5 rounded-2xl border-2 border-dashed border-emerald-400 bg-emerald-50 text-emerald-900 font-black text-xs">🏋️ 먼저 연습실에서 개수·금액 준비 운동하기</button>
+            <button type="button" onclick="go('practice')" class="w-full py-2.5 rounded-2xl border-2 border-dashed border-emerald-400 bg-emerald-50 text-emerald-900 font-black text-xs">🎧 먼저 혼자 연습하기에서 개수·금액 연습하기</button>
             <button onclick="startRound(1)" class="w-full py-3.5 rounded-2xl bg-orange-600 text-white font-black text-sm shadow">🎲 1판 시작: 순서 뽑기</button></div>`;
     } else {
         const role = rl.round === 1 ? '손님 🙋 (점원 말은 컴퓨터)' : '점원 🧑‍🍳 (손님 말은 컴퓨터)';
@@ -2765,6 +2765,17 @@ const prMicBtn = (label, fn) => JA_SR
     ? `<button type="button" onclick="${fn}" class="w-full py-3.5 rounded-2xl font-black text-sm shadow ${ui.prRec ? 'bg-red-600 text-white animate-pulse' : 'bg-emerald-700 text-white'}">${ui.prRec ? '🔴 듣는 중… 말하고 나서 눌러도 멈춰요' : label}</button>`
     : '<p class="text-xs text-gray-600 text-center">이 기기는 음성 인식이 안 돼요. 🔊로 듣고 소리 내어 따라 말해 보세요. (아이폰은 Safari로 열고 Siri를 켜 주세요)</p>';
 
+/* ---- 연구용 시간 기록 ----
+   생각한 시간(think): 문제가 나타난 때 → 처음 🎤를 누른 때(개수 듣기는 "다 옮겼어요"를 누른 때)
+   걸린 시간(total): 문제가 나타난 때 → 정답으로 인정되거나 넘어간 때. 단위는 초(소수 첫째 자리) */
+const prSec = ms => Math.round(ms / 100) / 10;
+const prMedian = a => { a = a.filter(x => x != null && x <= 60).sort((x, y) => x - y); if (!a.length) return null; const m = a.length >> 1; return a.length % 2 ? a[m] : Math.round((a[m - 1] + a[m]) * 5) / 10; };
+function prMarkMic() {                             // 🎤를 처음 누른 순간을 문제마다 한 번만 남김
+    if (ui.prRec) return;
+    if (ui.prTab === 'price' && ui.prPrice && !ui.prPrice.done && ui.prPrice.micAt == null) ui.prPrice.micAt = Date.now();
+    if (ui.prTab === 'count') { const c = prC(), q = c.qs && c.qs[c.i]; if (c.mode === 'quiz' && q && q.part === 'speak' && q.micAt == null) q.micAt = Date.now(); }
+}
+
 /* ---- ① 다코야키 개수 세기 ----
    연습(채점 없음): 누르거나 끌어서 옮기면 앱이 ひとつ·ふたつ… 하고 읽어 줌 → 따라 말하기
    퀴즈 10문제: 앞 5문제 듣고 옮기기(가) + 뒤 5문제 보고 말하기(나, 접시에서 더하고 빼며 바뀜) */
@@ -2824,11 +2835,16 @@ function prCountQuiz() {
     ui.prMsg = ''; prCountAsk(); renderPractice();
 }
 function prCountAsk() {
-    const c = prC(), q = c.qs[c.i];
+    const c = prC(), q = c.qs[c.i]; q.shownAt = Date.now();
     setTimeout(() => { if (ui.screen !== 'practice' || ui.prTab !== 'count' || prC().qs !== c.qs || c.qs[c.i] !== q) return;
         speakJa(q.part === 'listen' ? CNT10[q.want] : 'いくつですか', true); }, 350);
 }
-function prCountLog(q) { logEvent('practice', { corner: 'count', part: q.part, want: q.want, got: q.got ?? null, ok: q.res === 'ok', late: q.res === 'late', heard: q.heard || '' }, 'practice'); }
+function prCountLog(q) {
+    const now = Date.now();
+    q.think = q.part === 'listen' ? prSec(now - q.shownAt) : q.micAt != null ? prSec(q.micAt - q.shownAt) : null;
+    q.total = prSec(now - q.shownAt);
+    logEvent('practice', { corner: 'count', part: q.part, want: q.want, got: q.got ?? null, ok: q.res === 'ok', late: q.res === 'late', heard: q.heard || '', think: q.think, total: q.total }, 'practice');
+}
 function prCountCheck() {                          // (가) 다 옮겼어요
     const c = prC(), q = c.qs[c.i]; if (q.res) return;
     q.got = q.dish; q.res = q.dish === q.want ? 'ok' : 'no';
@@ -2848,7 +2864,7 @@ function prCountSpeak(alts) {                      // (나) 말하기 판정
 }
 function prCountPick(n) {                          // 음성 인식이 안 되는 기기: 골라서 답하기
     const c = prC(), q = c.qs[c.i]; if (q.res) return;
-    q.tries = 1; q.got = n; q.res = n === q.want ? 'ok' : 'no'; q.heard = '(골라서 답함)';
+    q.tries = 1; q.got = n; q.res = n === q.want ? 'ok' : 'no'; q.heard = '(골라서 답함)'; q.micAt = Date.now();
     sfx(q.res === 'ok' ? 'ok' : 'no'); prCountLog(q); renderPractice();
 }
 function prCountNext() {
@@ -2858,7 +2874,8 @@ function prCountNext() {
         c.mode = 'result';
         const a = c.qs.filter(q => q.part === 'listen' && q.res === 'ok').length, b = c.qs.filter(q => q.part === 'speak' && q.res === 'ok').length;
         c.a = a; c.b = b;
-        logEvent('practice', { corner: 'count', done: true, listen: a, speak: b, score: a + b, sec: Math.round((Date.now() - c.start) / 1000) }, 'practice');
+        c.tL = prMedian(c.qs.filter(q => q.part === 'listen').map(q => q.think)); c.tS = prMedian(c.qs.filter(q => q.part === 'speak').map(q => q.think));
+        logEvent('practice', { corner: 'count', done: true, listen: a, speak: b, score: a + b, sec: Math.round((Date.now() - c.start) / 1000), think_listen: c.tL, think_speak: c.tS }, 'practice');
         try { const best = JSON.parse(localStorage.getItem('oisii_cnt_best') || '0'); if (a + b > best) localStorage.setItem('oisii_cnt_best', JSON.stringify(a + b)); c.best = Math.max(best, a + b); } catch (e) { c.best = a + b; }
     }
     renderPractice();
@@ -2907,6 +2924,7 @@ function prCountHTML() {
             <div class="grid grid-cols-2 gap-2"><div class="bg-sky-50 rounded-2xl p-2"><p class="text-[11px] font-bold text-sky-700">👂 듣고 옮기기</p><p class="text-2xl font-black text-sky-800">${c.a} / 5</p></div>
                 <div class="bg-emerald-50 rounded-2xl p-2"><p class="text-[11px] font-bold text-emerald-700">🗣️ 보고 말하기</p><p class="text-2xl font-black text-emerald-800">${c.b} / 5</p></div></div>
             <p class="text-xs text-gray-500">내 최고 기록 ${c.best ?? c.a + c.b} / 10 · 말하기는 한 번에 맞혀야 점수가 돼요</p>
+            ${c.tL != null || c.tS != null ? `<p class="text-xs font-bold text-gray-600">⏱️ 대답까지 걸린 시간(가운데 값): 듣고 옮기기 ${c.tL ?? '-'}초 · 보고 말하기 ${c.tS ?? '-'}초</p>` : ''}
             <div class="text-left">${c.qs.map(row).join('')}</div>
             <button type="button" onclick="prCountQuiz()" class="w-full py-3 rounded-2xl bg-orange-500 text-white font-black text-sm">🔄 새 퀴즈</button></div>`;
     }
@@ -2932,7 +2950,7 @@ function prCountHTML() {
     return `${head}<div class="bg-white border-2 border-emerald-300 rounded-3xl p-3 space-y-2">
         <p class="text-sm font-black text-gray-800 text-center">${changed}<br><span class="jp-font">いくつですか</span> <button type="button" onclick="speakJa('いくつですか')">🔊</button> <span class="text-xs font-bold text-gray-500">— 접시의 개수를 일본어로 말해요</span></p>
         ${board(q.want, false, q.want > q.prev ? q.prev : 99, '🍽️ 접시')}
-        ${q.res ? res : JA_SR ? prMicBtn('🎤 개수를 일본어로 말하기', 'prListen(a => { prCountSpeak(a); })') : pick}
+        ${q.res ? res : JA_SR ? prMicBtn('🎤 개수를 일본어로 말하기', 'prMarkMic();prListen(a => { prCountSpeak(a); })') : pick}
         ${!q.res && c.msg ? `<div class="rounded-2xl border px-3 py-2 text-xs bg-red-50 border-red-200 text-red-700"><p class="font-bold">${esc(c.msg)} 한 번 더 세어 보세요.</p><p class="text-[11px] text-gray-500 mt-0.5">앱이 들은 말: <span class="jp-font font-bold">「${esc(c.heard || '')}」</span></p></div>` : ''}
         ${ui.prMsg ? `<p class="text-xs font-bold text-red-600 text-center">${esc(ui.prMsg)}</p>` : ''}</div>`;
 }
@@ -2976,7 +2994,7 @@ function prNewPrice(onlyWrong) {
         /* 마트 사진 50장 중 10장을 무작위로 (사진에서 가장 크게 보이는 금액이 정답) */
         items = shuffle(PR_MART).slice(0, 10).map(m => ({ kind: 'mart', img: `images/mart_${m.n}.jpg`, name: m.kana, kr: m.kr, n: m.n }));
     }
-    ui.prPrice = { items, i: 0, tries: 0, score: 0, wrong: [], done: false, retry: !!onlyWrong, msg: '', revealed: false, start: Date.now() };
+    ui.prPrice = { items, i: 0, tries: 0, score: 0, wrong: [], done: false, retry: !!onlyWrong, msg: '', revealed: false, start: Date.now(), qStart: Date.now(), micAt: null, okAt: null, qlog: [] };
     setTimeout(() => { if (ui.screen === 'practice' && ui.prTab === 'price') speakJa('いくらですか', true); }, 300);
 }
 function prPriceJudge(n, alts) {
@@ -2994,8 +3012,9 @@ function prPriceJudge(n, alts) {
 function prPriceHeard(alts) {
     const p = ui.prPrice, it = p.items[p.i], r = prPriceJudge(it.n, alts);
     p.tries++; p.heard = r.heard;
-    logEvent('practice', { corner: 'price', n: it.n, ok: r.kind === 'ok', kind: r.kind, heard: r.heard, try: p.tries, retry: p.retry }, 'practice');
+    logEvent('practice', { corner: 'price', n: it.n, ok: r.kind === 'ok', kind: r.kind, heard: r.heard, try: p.tries, retry: p.retry, hint: !!p.revealed, t: prSec(Date.now() - p.qStart) }, 'practice');
     if (r.kind === 'ok') {
+        p.okAt = Date.now();
         sfx('ok'); if (p.tries === 1 && !p.revealed) p.score++; else if (!p.wrong.some(x => x.n === it.n)) p.wrong.push(it);
         p.msg = ''; p.ok = true;
     } else {
@@ -3009,10 +3028,16 @@ function prPriceHeard(alts) {
 }
 function prPriceReveal() { const p = ui.prPrice, it = p.items[p.i]; p.revealed = true; if (!p.wrong.some(x => x.n === it.n)) p.wrong.push(it); speakJa(yenRead(it.n) + 'です'); renderPractice(); }
 function prPriceNext() {
-    const p = ui.prPrice; p.i++; p.tries = 0; p.msg = ''; p.ok = false; p.revealed = false; p.heard = '';
+    const p = ui.prPrice, it = p.items[p.i], now = Date.now();
+    /* 문제 하나가 끝날 때 문제별 기록 남기기 */
+    const q = { n: it.n, first: p.tries === 1 && !!p.ok && !p.revealed, ok: !!p.ok, tries: p.tries, hint: !!p.revealed,
+        think: p.micAt != null ? prSec(p.micAt - p.qStart) : null, total: prSec((p.okAt || now) - p.qStart), skip: !p.ok };
+    p.qlog.push(q);
+    logEvent('practice', { corner: 'price', q: true, retry: p.retry, ...q }, 'practice');
+    p.i++; p.tries = 0; p.msg = ''; p.ok = false; p.revealed = false; p.heard = ''; p.qStart = now; p.micAt = null; p.okAt = null;
     if (p.i >= p.items.length) {
-        p.done = true;
-        logEvent('practice', { corner: 'price', done: true, score: p.score, total: p.items.length, retry: p.retry, wrong: p.wrong.map(x => x.n), sec: Math.round((Date.now() - p.start) / 1000) }, 'practice');
+        p.done = true; p.medThink = prMedian(p.qlog.map(x => x.think));
+        logEvent('practice', { corner: 'price', done: true, score: p.score, total: p.items.length, retry: p.retry, wrong: p.wrong.map(x => x.n), sec: Math.round((now - p.start) / 1000), think_med: p.medThink, no_help: p.qlog.filter(x => x.first).length }, 'practice');
         if (!p.retry) { try { const k = 'oisii_pr_best', b = +localStorage.getItem(k) || 0; if (p.score > b) localStorage.setItem(k, p.score); } catch (e) { } }
     } else setTimeout(() => speakJa('いくらですか', true), 200);
     renderPractice();
@@ -3025,6 +3050,7 @@ function prPriceHTML() {
             <p class="text-sm font-bold text-gray-600">${p.retry ? '틀린 문제 다시 풀기 결과' : '가격 말하기 결과'}</p>
             <p class="text-4xl font-black text-emerald-700">${p.score} <span class="text-lg text-gray-500">/ ${p.items.length}</span></p>
             ${p.retry ? '' : `<p class="text-xs text-gray-500">한 번에 맞힌 문제 수예요 · 내 최고 기록 ${Math.max(best, p.score)}점</p>`}
+            ${p.medThink != null ? `<p class="text-xs font-bold text-gray-600">⏱️ 말하기 시작까지 걸린 시간(가운데 값) ${p.medThink}초</p>` : ''}
             ${p.wrong.length ? `<p class="text-xs text-gray-700">다시 볼 금액: ${p.wrong.map(x => `<b>${yen(x.n)}円</b>`).join(', ')}</p><button type="button" onclick="prNewPrice(true);renderPractice()" class="w-full py-3 rounded-2xl bg-orange-600 text-white font-black text-sm">🔁 틀린 문제만 다시 풀기 (${p.wrong.length})</button>` : '<p class="text-sm font-black text-emerald-700">🎉 모두 한 번에 맞혔어요!</p>'}
             <button type="button" onclick="prNewPrice();renderPractice()" class="w-full py-3 rounded-2xl bg-emerald-600 text-white font-black text-sm">🆕 새 10문항</button></div>`;
     }
@@ -3042,7 +3068,7 @@ function prPriceHTML() {
         </div>
         <div class="bg-white border-2 border-emerald-300 rounded-3xl p-4 space-y-2">
             ${p.ok ? `<p class="text-center text-sm font-black text-emerald-700">🎉 정답! ${p.tries === 1 && !p.revealed ? '한 번에 맞혔어요.' : ''}</p><button type="button" onclick="prPriceNext()" class="w-full py-3 rounded-2xl bg-emerald-600 text-white font-black text-sm">다음 →</button>`
-            : `${prMicBtn(p.tries ? '🎤 다시 말하기' : '🎤 「○○えんです」 말하기', 'prListen(a=>{prPriceHeard(a)})')}
+            : `${prMicBtn(p.tries ? '🎤 다시 말하기' : '🎤 「○○えんです」 말하기', 'prMarkMic();prListen(a=>{prPriceHeard(a)})')}
                ${p.msg ? `<div class="rounded-2xl border px-3 py-2 text-xs ${p.msg.startsWith('금액') ? 'bg-red-50 border-red-200 text-red-700' : 'bg-amber-50 border-amber-200 text-amber-800'}"><p class="font-bold jp-font">${esc(p.msg)}</p><p class="text-[11px] text-gray-500 mt-0.5">앱이 들은 말: 「${esc(p.heard || '')}」</p></div>` : ''}
                ${ui.prMsg ? `<p class="text-xs font-bold text-red-600 text-center">${esc(ui.prMsg)}</p>` : ''}
                <div class="flex gap-2">${p.revealed || !JA_SR ? '' : `<button type="button" onclick="prPriceReveal()" class="flex-1 py-2 rounded-xl bg-white border border-amber-300 text-amber-800 font-bold text-xs">💡 읽는 법 보기</button>`}

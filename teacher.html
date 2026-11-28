@@ -25,7 +25,7 @@
     <label class="text-xs font-bold">반(cohort)</label>
     <input id="cohort" value="main" class="border rounded-lg px-2 py-1 text-sm w-24" onchange="refreshAll()">
     <button data-t="prog" class="tab">진행 현황</button><button data-t="speak" class="tab">3단계 발화 기록</button>
-    <button data-t="practice" class="tab">연습실 기록</button><button data-t="roster" class="tab">명단 관리</button><button data-t="export" class="tab">내보내기</button>
+    <button data-t="practice" class="tab">혼자 연습 기록</button><button data-t="roster" class="tab">명단 관리</button><button data-t="export" class="tab">내보내기</button>
     <button onclick="refreshAll()" class="ml-auto text-xs underline">🔄 새로고침</button>
     <button onclick="doLogout()" class="text-xs underline text-gray-500">로그아웃</button>
   </div>
@@ -42,6 +42,7 @@
     <p class="text-sm font-bold">연구 자료 내려받기 (CSV, 엑셀에서 열림)</p>
     <button onclick="exportEvents()" class="bg-emerald-600 text-white font-black rounded-xl px-4 py-2 text-sm">활동 기록(events) CSV</button>
     <button onclick="exportSpeak()" class="bg-emerald-600 text-white font-black rounded-xl px-4 py-2 text-sm">3단계 발화 기록 CSV</button>
+    <button onclick="exportPractice()" class="bg-emerald-600 text-white font-black rounded-xl px-4 py-2 text-sm">혼자 연습 문제별 기록 CSV</button>
     <p class="text-xs text-gray-500">학생 이름이 들어 있으니 연구 보고서에는 번호나 가명으로 바꿔 쓰세요.</p>
   </div>
 </div>
@@ -96,13 +97,14 @@ async function renderPractice(){   // 연습실(준비 운동) 기록: 학생별
   const {data,error}=await sb.from('events').select('group_code,student,payload,ts').eq('cohort',coh()).eq('type','practice').order('ts').limit(5000);
   if(error){$('v-practice').innerHTML='<p class="text-xs text-red-600">불러오지 못했어요: '+esc(error.message)+'</p>';return;}
   const by={};
-  (data||[]).forEach(e=>{const p=e.payload||{},k=e.group_code+'|'+e.student;const o=(by[k]??={group:e.group_code,student:e.student,prac:0,cq:[],rounds:0,best:null,scores:[],tries:0,ok:0,last:null});
+  (data||[]).forEach(e=>{const p=e.payload||{},k=e.group_code+'|'+e.student;const o=(by[k]??={group:e.group_code,student:e.student,prac:0,cq:[],rounds:0,best:null,scores:[],thinks:[],tries:0,ok:0,qn:0,qfree:0,last:null});
     o.last=e.ts; if(p.corner==='count'&&p.practice)o.prac++; if(p.corner==='count'&&p.done&&p.listen!=null)o.cq.push(p);
-    if(p.corner==='price'&&p.done&&!p.retry){o.rounds++;o.scores.push(p.score);o.best=Math.max(o.best??0,p.score);}
-    if(p.corner==='price'&&!p.done){o.tries++;o.ok+=p.ok?1:0;}});
+    if(p.corner==='price'&&p.done&&!p.retry){o.rounds++;o.scores.push(p.score);o.best=Math.max(o.best??0,p.score);if(p.think_med!=null)o.thinks.push(p.think_med);}
+    if(p.corner==='price'&&p.q&&!p.retry){o.qn++;o.qfree+=p.first?1:0;}
+    if(p.corner==='price'&&!p.done&&!p.q){o.tries++;o.ok+=p.ok?1:0;}});
   const rows=Object.values(by).sort((a,b)=>String(a.group).localeCompare(String(b.group),undefined,{numeric:true})||a.student.localeCompare(b.student));
-  $('v-practice').innerHTML=`<table class="w-full"><tr><th>조</th><th>학생</th><th>개수 연습 (10개까지)</th><th>개수 퀴즈 횟수</th><th>개수 퀴즈 첫 회<br>듣기·말하기</th><th>개수 퀴즈 최고</th><th>가격 말하기 판 수</th><th>첫 판 점수</th><th>최고 점수</th><th>가격 발화 정답률</th><th>마지막 연습</th></tr>${rows.map(o=>`<tr><td>${esc(o.group)}조</td><td>${esc(o.student)}</td><td>${o.prac}회</td><td>${o.cq.length}회</td><td>${o.cq.length?o.cq[0].listen+'/5 · '+o.cq[0].speak+'/5':'-'}</td><td>${o.cq.length?Math.max(...o.cq.map(q=>q.score))+'/10':'-'}</td><td>${o.rounds}판</td><td>${o.scores.length?o.scores[0]+'/10':'-'}</td><td>${o.best??'-'}${o.best!=null?'/10':''}</td><td>${o.tries?Math.round(o.ok/o.tries*100)+'% ('+o.ok+'/'+o.tries+')':'-'}</td><td>${ago(o.last)}</td></tr>`).join('')||'<tr><td colspan=11>아직 연습 기록이 없어요.</td></tr>'}</table>
-  <p class="text-[11px] text-gray-500 mt-2">※ 개수 퀴즈는 듣고 옮기기 5문제 + 보고 말하기 5문제예요(말하기는 한 번에 맞혀야 점수). 첫 회와 최고 점수를 비교하면 연습으로 얼마나 늘었는지 볼 수 있어요. (틀린 문제 다시 풀기는 점수에 넣지 않아요)</p>`;
+  $('v-practice').innerHTML=`<table class="w-full"><tr><th>조</th><th>학생</th><th>개수 연습 (10개까지)</th><th>개수 퀴즈 횟수</th><th>개수 퀴즈 첫 회<br>듣기·말하기</th><th>개수 퀴즈 최고</th><th>가격 말하기 판 수</th><th>첫 판 점수</th><th>최고 점수</th><th>가격 발화 정답률</th><th>도움 없이 한 번에</th><th>가격 생각 시간<br>첫 판 → 최근 판</th><th>개수 퀴즈 시간<br>첫 회 → 최근 (듣기·말하기)</th><th>마지막 연습</th></tr>${rows.map(o=>`<tr><td>${esc(o.group)}조</td><td>${esc(o.student)}</td><td>${o.prac}회</td><td>${o.cq.length}회</td><td>${o.cq.length?o.cq[0].listen+'/5 · '+o.cq[0].speak+'/5':'-'}</td><td>${o.cq.length?Math.max(...o.cq.map(q=>q.score))+'/10':'-'}</td><td>${o.rounds}판</td><td>${o.scores.length?o.scores[0]+'/10':'-'}</td><td>${o.best??'-'}${o.best!=null?'/10':''}</td><td>${o.tries?Math.round(o.ok/o.tries*100)+'% ('+o.ok+'/'+o.tries+')':'-'}</td><td>${o.qn?Math.round(o.qfree/o.qn*100)+'% ('+o.qfree+'/'+o.qn+')':'-'}</td><td>${o.thinks.length?o.thinks[0]+'초'+(o.thinks.length>1?' → '+o.thinks[o.thinks.length-1]+'초':''):'-'}</td><td>${(()=>{const c=o.cq.filter(q=>q.think_listen!=null||q.think_speak!=null);if(!c.length)return '-';const f=q=>(q.think_listen??'-')+'·'+(q.think_speak??'-')+'초';return f(c[0])+(c.length>1?' → '+f(c[c.length-1]):'');})()}</td><td>${ago(o.last)}</td></tr>`).join('')||'<tr><td colspan=14>아직 연습 기록이 없어요.</td></tr>'}</table>
+  <p class="text-[11px] text-gray-500 mt-2">※ 개수 퀴즈는 듣고 옮기기 5문제 + 보고 말하기 5문제예요(말하기는 한 번에 맞혀야 점수). 첫 회와 최고 점수를 비교하면 연습으로 얼마나 늘었는지 볼 수 있어요. (틀린 문제 다시 풀기는 점수에 넣지 않아요)<br>※ 시간은 문제가 나타난 뒤 🎤를 처음 누르기까지(개수 듣기는 "다 옮겼어요"까지) 걸린 초의 가운데 값이에요. 60초가 넘는 기록은 딴짓으로 보고 뺐어요. '도움 없이 한 번에'는 "읽는 법 보기"를 누르지 않고 첫 시도에 맞힌 비율이에요.</p>`;
 }
 function speakRows(){
   return sortG(G).flatMap(g=>((g.data||{}).relay||{}).log?.map(e=>({group:g.code,round:e.r,idx:e.i,by:e.by,jp:e.jp,tries:e.tries,best:e.best,via:e.via,no_hint:e.hint===false?'Y':(e.hint?'N':''),t:e.t}))||[]);
@@ -131,6 +133,13 @@ function csv(rows,name){
 async function exportEvents(){
   const all=[];for(let from=0;;from+=1000){const {data,error}=await sb.from('events').select('*').eq('cohort',coh()).order('ts').range(from,from+999);if(error){alert(error.message);return;}all.push(...data);if(data.length<1000)break;}
   csv(all.map(e=>({time:e.ts,group:e.group_code,student:e.student,step:e.step,type:e.type,payload:JSON.stringify(e.payload)})),'events.csv');
+}
+async function exportPractice(){   // 연습실: 문제 하나당 한 줄 (연구 분석용)
+  const all=[];for(let from=0;;from+=1000){const {data,error}=await sb.from('events').select('group_code,student,payload,ts').eq('cohort',coh()).eq('type','practice').order('ts').range(from,from+999);if(error){alert(error.message);return;}all.push(...data);if(data.length<1000)break;}
+  const rows=all.filter(e=>{const p=e.payload||{};return (p.corner==='price'&&p.q)||(p.corner==='count'&&p.part);}).map(e=>{const p=e.payload;
+    return p.corner==='price'?{time:e.ts,group:e.group_code,student:e.student,corner:'가격 말하기',kind:p.retry?'틀린 문제 다시':'본 풀이',answer:p.n,got:'',first_ok:p.first?1:0,ok:p.ok?1:0,tries:p.tries,hint:p.hint?1:0,think_sec:p.think??'',total_sec:p.total??'',heard:''}
+      :{time:e.ts,group:e.group_code,student:e.student,corner:'개수 퀴즈',kind:p.part==='listen'?'듣고 옮기기':'보고 말하기',answer:p.want,got:p.got??'',first_ok:p.ok?1:0,ok:(p.ok||p.late)?1:0,tries:'',hint:'',think_sec:p.think??'',total_sec:p.total??'',heard:p.heard||''};});
+  csv(rows,'practice_items.csv');
 }
 function exportSpeak(){csv(speakRows().map(r=>({...r,time:r.t?new Date(r.t).toISOString():''})),'speaking_log.csv');}
 boot();
